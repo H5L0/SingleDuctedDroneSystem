@@ -1,4 +1,7 @@
 #pragma once
+#define USE_HL_MPU6050
+#ifdef USE_HL_MPU6050
+
 #include "Arduino.h"
 #include "Wire.h"
 
@@ -12,8 +15,8 @@
 #define MPU6050_REG_ACCEL_CONFIG 0x1c
 #define MPU6050_REG_PWR_MGMT_1   0x6b
 
-#define MPU6050_GYRO_OUT_REGISTER     0x43
-#define MPU6050_ACCEL_OUT_REGISTER    0x3B
+#define MPU6050_REG_ACCEL_OUT    0x3B
+#define MPU6050_REG_GYRO_OUT     0x43
 
 #define RAD_2_DEG             57.29578 // [¡ã/rad]
 #define CALIB_OFFSET_NB_MES   500
@@ -60,7 +63,7 @@ class MPU6050
 
 
 	private:
-	void FetchData();
+	void FetchRawData(s16 raws[7]);
 
 	byte _Write(byte reg, byte data);
 	byte _Read(byte reg);
@@ -68,10 +71,10 @@ class MPU6050
 
 	TwoWire &wire;
 
-	// deg/s = (raw * 250) << shift
-	u8 gyro_degsec_shift_250;
-	// g = (raw * 2) << shift
-	u8 acc_g_shift_2;
+	// deg/s = (raw * 500) << shift
+	u8 gyro_degsec_shift_500;
+	// g = (raw * 4) << shift
+	u8 acc_g_shift_4;
 
 	Vector3S16 gyro_offset;
 	Vector3S16 acc_offset;
@@ -86,3 +89,5 @@ class MPU6050
 
 	u8 filter_gyro_coefficient_shift; //ÍÓÂÝÒÇÖÃÐÅ¶È ((1<<shift) - 1) / (1<<shift) (* = 6)
 };
+
+#endif

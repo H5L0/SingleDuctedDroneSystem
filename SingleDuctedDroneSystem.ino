@@ -6,15 +6,15 @@
 #include "Wire.h"
 #include "SPI.h"
 
-#define USE_6050_A
+#define USE_HL_MPU6050
 
-#ifdef USE_6050_A
-#include "MPU6050_light.h"
+#ifdef USE_HL_MPU6050
+#include "HL.MPU6050.h"
 #else
-#include "TinyMPU6050.h"
+#include "MPU6050_light.h"
 #endif
-#include "RF24.h"
 
+#include "RF24.h"
 #include "Servo.h"
 //#include "EEPROM.h"
 #include "avr/eeprom.h"
@@ -75,34 +75,34 @@ enum PackageType
 {
 	etPackage_None = 0b00,
 	etPackage_Control = 0b01,
-	etPackage_Config  = 0b10,
+	etPackage_Config = 0b10,
 };
 
 enum ConfigCommandType
 {
-	etConfig_Hello       = 0x01,
-	etConfig_ByeBye      = 0x02,
-	etConfig_Get         = 0x03,  //获取参数
+	etConfig_Hello = 0x01,
+	etConfig_ByeBye = 0x02,
+	etConfig_Get = 0x03,  //获取参数
 
-	etConfig_StateToken  = 0x05,  //无人机状态转移符
-	etConfig_AngleShift  = 0x08,  //控制角度幅度
+	etConfig_StateToken = 0x05,  //无人机状态转移符
+	etConfig_AngleShift = 0x08,  //控制角度幅度
 
-	etConfig_Throttle    = 0x10,  //油门最大/最小/开始值
-	etConfig_RudderBias  = 0x20,
+	etConfig_Throttle = 0x10,  //油门最大/最小/开始值
+	etConfig_RudderBias = 0x20,
 	etConfig_RudderRatio = 0x21,
 
-	etConfig_EnablePID   = 0x41,
-	etConfig_DisablePID  = 0x42,
-	etConfig_SetPID      = 0x50,  //设置PID的参数
-	etConfig_ZeroPID     = 0x51,  //清空PID的积分
+	etConfig_EnablePID = 0x41,
+	etConfig_DisablePID = 0x42,
+	etConfig_SetPID = 0x50,  //设置PID的参数
+	etConfig_ZeroPID = 0x51,  //清空PID的积分
 
-	etConfig_Calibrate   = 0x60,  //以当前姿态为基准校正MPU偏移
+	etConfig_Calibrate = 0x60,  //以当前姿态为基准校正MPU偏移
 
-	etConfig_Store       = 0x80,  //储存某参数到EEPROM
-	etConfig_Load        = 0x81,  //从EEPROM读取数据
-	etConfig_Delete      = 0x8F,  //清除储存到EEPROM的参数
+	etConfig_Store = 0x80,  //储存某参数到EEPROM
+	etConfig_Load = 0x81,  //从EEPROM读取数据
+	etConfig_Delete = 0x8F,  //清除储存到EEPROM的参数
 
-	etConfig_Log         = 0xB1,  //控制打印的信息
+	etConfig_Log = 0xB1,  //控制打印的信息
 
 	//重置所有参数 ...未支持
 	etConfig_Reset = 0xAB,
@@ -112,28 +112,28 @@ enum ConfigCommandType
 
 enum RequestFeedbackType
 {
-	etFeedback_None  = 0x00,
-	etFeedback_Ack   = 0x01,
+	etFeedback_None = 0x00,
+	etFeedback_Ack = 0x01,
 
-	etFeedback_Fail  = 0xFF,
+	etFeedback_Fail = 0xFF,
 	etFeedback_Error = 0xFE,
-	etFeedback_UnknownPackageType   = 0xFD,
+	etFeedback_UnknownPackageType = 0xFD,
 	etFeedback_UnknownConfigCommand = 0xFC,
 
-	etFeedback_State            = 0x10,
-	etFeedback_Angles           = 0x11,
-	etFeedback_AngularVelocity  = 0x12,
-	etFeedback_Acceleration     = 0x13,
-	etFeedback_Battery          = 0x1A,
+	etFeedback_State = 0x10,
+	etFeedback_Angles = 0x11,
+	etFeedback_AngularVelocity = 0x12,
+	etFeedback_Acceleration = 0x13,
+	etFeedback_Battery = 0x1A,
 
-	etFeedback_PIDParameters    = 0x21,
+	etFeedback_PIDParameters = 0x21,
 	etFeedback_RudderParameters = 0x22,  //bias[0][1][2][3] [ratio] [shift]
 
-	etFeedback_StoreInfo        = 0x31,
+	etFeedback_StoreInfo = 0x31,
 
-	etFeedback_RudderAngles     = 0x61,
-	etFeedback_PIDOutput        = 0x62,
-	etFeedback_TimeCycle        = 0x6A,
+	etFeedback_RudderAngles = 0x61,
+	etFeedback_PIDOutput = 0x62,
+	etFeedback_TimeCycle = 0x6A,
 };
 
 
@@ -144,13 +144,13 @@ enum RequestFeedbackType
 //     0x88 +-------------+------------+    SafeMode
 enum StateTransferToken
 {
-	etStateToken_PowerOn  = 0x01, //? => 锁定模式
+	etStateToken_PowerOn = 0x01, //? => 锁定模式
 	etStateToken_PowerOff = 0x88, //锁定模式/安全模式 => 
 
-	etStateToken_Lock   = 0xF0,   //安全模式 => 锁定模式
+	etStateToken_Lock = 0xF0,   //安全模式 => 锁定模式
 	etStateToken_Unlock = 0xFA,   //锁定模式 => 安全模式
 
-	etStateToken_Launch   = 0x11, //安全模式 => 飞行模式
+	etStateToken_Launch = 0x11, //安全模式 => 飞行模式
 	etStateToken_SafeMode = 0xFE, //飞行模式 => 安全模式
 };
 
@@ -324,9 +324,9 @@ struct PropertyStruct
 //无人机状态
 struct
 {
-	Vector3F acceleration;      //加速度
-	Vector3F angle;             //姿态角度
-	Vector3F angular_velocity;  //角速度
+	Vector3FP32 acceleration;      //加速度
+	Vector3FP32 angle;             //姿态角度
+	Vector3FP32 angular_velocity;  //角速度
 
 	u8 battery_level;           //电池电位 [0V, 5V] => [0,255] (ADC的原始转换结果)
 
@@ -566,8 +566,11 @@ bool InitMPU()
 {
 	LOGF("Initial MPU6050... ");
 
-#ifdef USE_6050_A
+#ifdef USE_HL_MPU6050
+	byte status = mpu.Begin();
+#else
 	byte status = mpu.begin();
+#endif
 	LOGF("Status: ");
 	LOGLN(status);
 	if(status != 0) return false;
@@ -575,13 +578,10 @@ bool InitMPU()
 	LOGF("Calculating offsets, do not move MPU6050. ");
 	delay(255);
 
-	mpu.calcOffsets(true, true);
-
-#else
-	mpu.Initialize();
-
-	LOGF("Calculating offsets, do not move MPU6050. ");
+#ifdef USE_HL_MPU6050
 	mpu.Calibrate();
+#else
+	mpu.calcOffsets(true, true);
 #endif
 	LOGF("Done!\n");
 	return true;
@@ -672,7 +672,7 @@ void SetState(StateTransferToken token)
 		}
 	}
 	else if(token == etStateToken_Launch)
-	{	
+	{
 		//只有处于安全模式下才能起飞
 		if(state == eState_SafeMode)
 		{
@@ -683,7 +683,7 @@ void SetState(StateTransferToken token)
 		}
 	}
 	else if(token == etStateToken_SafeMode)
-	{	
+	{
 		//**锁定模式不能直接转入安全模式(只能使用Unlock)
 		//只在飞行模式时才能直接进入安全模式
 		if(state == eState_FlightMode)
@@ -823,7 +823,7 @@ bool PersistParameters(u8 cm_flags, u8 pid_flags, bool is_store)
 			}
 		}
 	}
-	
+
 	if(pid_flags)
 	{
 		for(u8 i = 0; i < 8; i++)
@@ -868,11 +868,12 @@ bool ClearStored(u8 cm_flags, u8 pid_flags)
 void Calibrate()
 {
 
-#ifdef USE_6050_A
+#ifdef USE_HL_MPU6050
+	mpu.Calibrate();
+	mpu.Reset();
+#else
 	mpu.calcOffsets(true, true);
 	mpu._Reset();
-#else
-	mpu.Calibrate();
 #endif
 
 	ClearPIDIntegration(255);
@@ -923,7 +924,7 @@ RequestFeedbackType ExecuteConfigure(ConfigCommandPackage &config)
 		return PersistParameters(config.store.cm_flags, config.store.pid_flags, true) ? etFeedback_Ack : etFeedback_Fail;
 	case etConfig_Load:
 		return PersistParameters(config.store.cm_flags, config.store.pid_flags, false) ? etFeedback_Ack : etFeedback_Fail;
-	case etConfig_Delete: 
+	case etConfig_Delete:
 		return ClearStored(config.store.cm_flags, config.store.pid_flags) ? etFeedback_Ack : etFeedback_Fail;
 		//Log
 	case etConfig_Log:
@@ -980,15 +981,15 @@ bool SendFeedback(RequestFeedbackType request)
 	}
 	if(request == etFeedback_Angles)
 	{
-		Vector3ToVector3FP16(Status.angle, feedback.v3f16);
+		Vector3FP32ToVector3FP16(Status.angle, feedback.v3f16);
 	}
 	else if(request == etFeedback_AngularVelocity)
 	{
-		Vector3ToVector3FP16(Status.angular_velocity, feedback.v3f16);
+		Vector3FP32ToVector3FP16(Status.angular_velocity, feedback.v3f16);
 	}
 	else if(request == etFeedback_Acceleration)
 	{
-		Vector3ToVector3FP16(Status.acceleration, feedback.v3f16);
+		Vector3FP32ToVector3FP16(Status.acceleration, feedback.v3f16);
 	}
 	else
 	{
@@ -1028,7 +1029,7 @@ RequestFeedbackType HandleReceiveData()
 		//直接发送
 		//auto fb = (RequestFeedbackType)receive.control_package.request;
 		//SendFeedback(fb);
-		
+
 		//重置失去控制计时
 		Status.lost_control_timer = 0;
 
@@ -1080,6 +1081,7 @@ void UpdateStatus()
 {
 	//更新时间
 	u32 now_time = micros();
+	u16 dtime_us = (u16)(now_time - Status.last_update_time);
 	//初始化时间
 	if(Status.last_update_time == 0)
 	{
@@ -1089,38 +1091,39 @@ void UpdateStatus()
 	else
 	{
 		// dtime.1 = 1/1024s = 1000000us/1024 = 977us  **u16: 64s溢出**
-		u16 dtime = (now_time - Status.last_update_time) / 977;
+		u16 dtime = dtime_us / 977;
 		// dTime钳制到[1, 255]
 		Status.delta_time = dtime > 255 ? 255 : dtime == 0 ? 1 : dtime;
 		Status.last_update_time = now_time;
 		Status.lost_control_timer += dtime;
 	}
 
-#ifdef USE_6050_A
-	mpu.update();
-
-	Status.acceleration.x = -mpu.getAccX();
-	Status.acceleration.y = -mpu.getAccY();
-	Status.acceleration.z = -mpu.getAccZ();
-	Status.angle.x = -mpu.getAngleX();
-	Status.angle.y = -mpu.getAngleY();
-	Status.angle.z = -mpu.getAngleZ();
-	Status.angular_velocity.x = -mpu.getGyroX();
-	Status.angular_velocity.y = -mpu.getGyroY();
-	Status.angular_velocity.z = -mpu.getGyroZ();
-#else
-	mpu.Execute();
-
+	u32 before_update_mpu_time = micros();
+#ifdef USE_HL_MPU6050
+	mpu.Update(dtime_us);
 	Status.acceleration.x = -mpu.GetAccX();
 	Status.acceleration.y = -mpu.GetAccY();
-	Status.acceleration.z = mpu.GetAccZ();
-	Status.angle.x = -mpu.GetAngX();
-	Status.angle.y = -mpu.GetAngY();
-	Status.angle.z = mpu.GetAngZ();
+	Status.acceleration.z = -mpu.GetAccZ();
+	Status.angle.x = -mpu.GetAngleX();
+	Status.angle.y = -mpu.GetAngleY();
+	Status.angle.z = -mpu.GetAngleZ();
 	Status.angular_velocity.x = -mpu.GetGyroX();
 	Status.angular_velocity.y = -mpu.GetGyroY();
-	Status.angular_velocity.z = mpu.GetGyroZ();
+	Status.angular_velocity.z = -mpu.GetGyroZ();
+#else
+	mpu.update();
+
+	Status.acceleration.x = -(fp32)(mpu.getAccX() * FP32_1);
+	Status.acceleration.y = -(fp32)(mpu.getAccY() * FP32_1);
+	Status.acceleration.z = -(fp32)(mpu.getAccZ() * FP32_1);
+	Status.angle.x = -(fp32)(mpu.getAngleX() * FP32_1);
+	Status.angle.y = -(fp32)(mpu.getAngleY() * FP32_1);
+	Status.angle.z = -(fp32)(mpu.getAngleZ() * FP32_1);
+	Status.angular_velocity.x = -(fp32)(mpu.getGyroX() * FP32_1);
+	Status.angular_velocity.y = -(fp32)(mpu.getGyroY() * FP32_1);
+	Status.angular_velocity.z = -(fp32)(mpu.getGyroZ() * FP32_1);
 #endif
+	u32 after_update_mpu_time = micros();
 
 	//**Battery**//
 	//Status.battery_level = analogRead(PIN_BATTERY);
@@ -1133,33 +1136,37 @@ void UpdateStatus()
 		LOG(Status.delta_time);
 		//LOG(Status.delta_time * 0.9765625f);
 		//LOG("ms\n");
+
+		LOGF(" MPU.dT= ");
+		LOG(after_update_mpu_time - before_update_mpu_time);
+		LOGF("us ");
 	}
 	if(Config.log_status.angle)
 	{
 		LOGF(" r.x= ");
-		LOG(Status.angle.x);
+		LOG(Status.angle.x / (float)FP32_1);
 		LOGF(" r.y= ");
-		LOG(Status.angle.y);
+		LOG(Status.angle.y / (float)FP32_1);
 		LOGF(" r.z= ");
-		LOG(Status.angle.z);
+		LOG(Status.angle.z / (float)FP32_1);
 	}
 	if(Config.log_status.angular_velocity)
 	{
 		LOGF(" rv.x= ");
-		LOG(Status.angular_velocity.x);
+		LOG(Status.angular_velocity.x / (float)FP32_1);
 		LOGF(" rv.y= ");
-		LOG(Status.angular_velocity.y);
+		LOG(Status.angular_velocity.y / (float)FP32_1);
 		LOGF(" rv.z= ");
-		LOG(Status.angular_velocity.z);
+		LOG(Status.angular_velocity.z / (float)FP32_1);
 	}
 	if(Config.log_status.acceleration)
 	{
 		LOGF(" a.x= ");
-		LOG(Status.acceleration.x);
+		LOG(Status.acceleration.x / (float)FP32_1);
 		LOGF(" a.y= ");
-		LOG(Status.acceleration.y);
+		LOG(Status.acceleration.y / (float)FP32_1);
 		LOGF(" a.z= ");
-		LOG(Status.acceleration.z);
+		LOG(Status.acceleration.z / (float)FP32_1);
 	}
 }
 
