@@ -1,5 +1,5 @@
 #pragma once
-#include "Types.h"
+#include "HL.Types.h"
 
 
 class PIDController
@@ -20,16 +20,11 @@ class PIDController
 	//误差积分
 	fp16 error_integration;
 
-	PIDController()
-	{
 
-	}
+	PIDController() { }
+	//PIDController(fp32 kp32, fp32 ki32, fp32 kd32) : kp(kp32), ki(ki32), kd(kd32) { }
+	PIDController(fp16 kp16, fp16 ki16, fp16 kd16) : kp(kp16), ki(ki16), kd(kd16) { }
 
-
-	PIDController(fp32 kp32, fp32 ki32, fp32 kd32) :
-		kp(kp32), ki(ki32), kd(kd32)
-	{
-	}
 
 	//input: 目标值
 	//state: 系统当前输出值 s{7}.{8}  p = 0.0039  r = [-128.996, 127.996]

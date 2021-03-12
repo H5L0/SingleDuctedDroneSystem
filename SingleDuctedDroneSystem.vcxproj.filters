@@ -21,14 +21,25 @@
     <ClInclude Include="__vm\.SingleDuctedDroneSystem.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Log.h">
+    <ClInclude Include="HL.MPU6050.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="PID.h">
+    <ClInclude Include="HL.Log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Types.h">
+    <ClInclude Include="HL.Types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="HL.PID.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HL.Vectors.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="HL.MPU6050.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
