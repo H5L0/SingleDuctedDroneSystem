@@ -1,5 +1,5 @@
 #pragma once
-#define USE_HL_MPU6050
+//#define USE_HL_MPU6050
 #ifdef USE_HL_MPU6050
 
 #include "Arduino.h"

@@ -2,7 +2,7 @@
 #include "HL.Types.h"
 
 
-class PIDController
+class PIDControllerFP16
 {
 	public:
 	fp16 kp;
@@ -21,9 +21,9 @@ class PIDController
 	fp16 error_integration;
 
 
-	PIDController() { }
-	//PIDController(fp32 kp32, fp32 ki32, fp32 kd32) : kp(kp32), ki(ki32), kd(kd32) { }
-	PIDController(fp16 kp16, fp16 ki16, fp16 kd16) : kp(kp16), ki(ki16), kd(kd16) { }
+	PIDControllerFP16() { }
+	//PIDControllerFP16(fp32 kp32, fp32 ki32, fp32 kd32) : kp(kp32), ki(ki32), kd(kd32) { }
+	PIDControllerFP16(fp16 kp16, fp16 ki16, fp16 kd16) : kp(kp16), ki(ki16), kd(kd16) { }
 
 
 	//input: 目标值
@@ -52,3 +52,47 @@ class PIDController
 };
 
 
+
+class PIDController
+{
+	public:
+	float kp;
+	float ki;
+	float kd;
+
+	float output;
+
+	//上一误差
+	float last_error;
+
+	//误差积分
+	float error_integration;
+
+
+	PIDController() {}
+	PIDController(float kp, float ki, float kd) : kp(kp), ki(ki), kd(kd) {}
+
+
+	//input: 目标值
+	//state: 系统当前输出值
+	//time:  更新周期
+	float Step(float input, float state, float time)
+	{
+		//当前误差
+		float this_error = input - state;
+		//误差微分
+		float this_diff = (this_error - last_error) / time;
+
+		last_error = this_error;
+
+		//误差积分
+		error_integration += this_error * time;
+
+		if(error_integration > 1.0f) error_integration = 1.0f;
+		else if(error_integration < -1.0f) error_integration = -1.0f;
+
+		output = kp * (this_error + kd * this_diff + ki * error_integration);
+		return output;
+	}
+
+};

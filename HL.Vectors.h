@@ -16,7 +16,7 @@ struct Vector3FP16
 };
 
 
-inline void Vector3ToVector3FP16(const Vector3F &v3f, Vector3FP16 &v3fp16)
+inline void Vector3FToVector3FP16(const Vector3F &v3f, Vector3FP16 &v3fp16)
 {
 	v3fp16.x = (fp16)(v3f.x * FP16_1);
 	v3fp16.y = (fp16)(v3f.y * FP16_1);

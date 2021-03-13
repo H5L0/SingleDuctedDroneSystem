@@ -6,7 +6,7 @@
 #include "Wire.h"
 #include "SPI.h"
 
-#define USE_HL_MPU6050
+//#define USE_HL_MPU6050
 
 #ifdef USE_HL_MPU6050
 #include "HL.MPU6050.h"
@@ -44,7 +44,7 @@
 #define ESIZE_CONFIG   sizeof(ConfigStruct)
 #define ESIZE_THROTTLE sizeof(PropertyStruct::ThrottleProperty)
 #define ESIZE_RUDDER   sizeof(PropertyStruct::RudderProperty)
-#define ESIZE_PID_PART 6   //2*3 = 6 PID的关键参数大小
+#define ESIZE_PID_PART 12   //4*3 = 12 PID的关键参数大小
 
 #define EKEY (0b10101010)
 
@@ -207,7 +207,7 @@ struct ConfigCommandPackage
 		{
 			u8 index;
 			u8 id;
-			fp16 value;
+			fp32 value;
 		}pid;
 
 		struct StoreStruct
@@ -219,6 +219,7 @@ struct ConfigCommandPackage
 		struct GetStruct
 		{
 			u8 target;
+			u8 index;
 		}get;
 	};
 };
@@ -313,9 +314,7 @@ struct PropertyStruct
 	{
 		u16 middle;      //PWM信号中间值(us)
 		s8 bias_us[4];   //针对安装情况设置的中间值偏移
-
-		u8 angle_ratio;  //PWM信号变化范围 = 128 * ratio/16 = 8 * ratio (us)
-						 //[1, 32] 默认16 ~= 25.6°  32 ~= 51.2° (单侧转角)
+		u8 angle_ratio;  //舵片单侧转角，PWM信号变化范围 = value * angle_ratio * (1000/180) (*)
 	}rudder;
 
 }Property = { { 1000, 1000 }, { 1500, { 0, 0, 0, 0 }, 16 } };
@@ -324,16 +323,17 @@ struct PropertyStruct
 //无人机状态
 struct
 {
-	Vector3FP32 acceleration;      //加速度
-	Vector3FP32 angle;             //姿态角度
-	Vector3FP32 angular_velocity;  //角速度
+	Vector3F acceleration;      //加速度
+	Vector3F angle;             //姿态角度
+	Vector3F angular_velocity;  //角速度
 
 	u8 battery_level;           //电池电位 [0V, 5V] => [0,255] (ADC的原始转换结果)
 
-	u8 delta_time;              //最近一次更新的间隔(1/1024s)
+	u8 delta_time_1024;         //最近一次更新的间隔(1/1024s)
+	float delta_time;           //更新间隔(s)
 	u32 last_update_time;       //上一更新的时间(us)
 
-	u16 lost_control_timer;       //失去控制的时间(ms)
+	u16 lost_control_timer;     //失去控制的时间(ms)
 }Status;
 
 
@@ -342,12 +342,7 @@ struct
 {
 	//[0, 1000] => 1000 + value =>>= [0%, 100%]
 	u16 throttle;
-	//[-128, 127] => middle+bias+value*ratio/16 =>>= value/128 * 1.6 * ratio (°)
-	//按[1550us, 2450us] => [0°, 180°]计算: (ratio = 16) => [-25.6°, -25.4°] (精度0.2°）
-	s8 rudders[4];
-
-	//s8 device_1;
-	//s8 device_2;
+	float rudders[4];
 
 	Servo motor;
 	Servo servo[4];
@@ -424,7 +419,7 @@ bool connected = false;
 struct
 {
 	u8 length;      //长度(>8则重复) (255: 无限循环)
-	u8 wait_timer;   //上次结束蜂鸣的时间
+	u8 wait_timer;  //蜂鸣每节时长
 	u8 pattern;     //Bit[x]=1 代表蜂鸣器响1/4s (低位开始)
 	u8 position;    //当前pattern的bit位置 [0, 8]
 }Beep = { 0, 0, 0, 0 };
@@ -461,21 +456,21 @@ void InitProperty()
 
 
 	//PID.X
-	PID.RX.kp = 26;   //0.1
+	PID.RX.kp = 0.1f;   //0.1
 	PID.RX.ki = 0;
-	PID.RX.kd = 13;   //0.05
+	PID.RX.kd = 0.05f;   //0.05
 
-	PID.VX.kp = FP16_1 * 2;
-	PID.VX.ki = FP16_1;
-	PID.VX.kd = 0;
+	PID.VX.kp = 2.0f;
+	PID.VX.ki = 1.0f;
+	PID.VX.kd = 0;+
 
 	//PID.Y
-	PID.RY.kp = 26;
+	PID.RY.kp = 0.1f;
 	PID.RY.ki = 0;
-	PID.RY.kd = 13;
+	PID.RY.kd = 0.05f;
 
-	PID.VY.kp = FP16_1 * 2;
-	PID.VY.ki = FP16_1;
+	PID.VY.kp = 2.0f;
+	PID.VY.ki = 1.0f;
 	PID.VY.kd = 0;
 
 	//PID.Z
@@ -492,9 +487,9 @@ void InitProperty()
 	PID.RZ.ki = 0;
 	PID.RZ.kd = 0;
 
-	PID.VZ.kp = FP16_H5;
+	PID.VZ.kp = 0.5f;
 	PID.VZ.ki = 0;
-	PID.VZ.kd = FP16_1 / 10;
+	PID.VZ.kd = 0.1f;
 
 
 	//读取之前储存的数据
@@ -588,6 +583,42 @@ bool InitMPU()
 }
 
 
+
+void SetMotor(u16 throttle)
+{
+	Control.throttle = throttle > 1000 ? 1000 : throttle;
+	Control.motor.writeMicroseconds(Control.throttle + Property.throttle.start);
+}
+
+void SetServo(u8 index, float value)
+{
+	if(value > 1) value = 1;
+	else if(value < -1) value = -1;
+
+	//滤波平滑 1/8
+	float sValue = value * 0.1f + Control.rudders[index] * 0.9f;
+	Control.rudders[index] = sValue;
+
+	// = middle + bias + value * ratio / 16
+	s16 center = (s16)Property.rudder.middle + Property.rudder.bias_us[index];
+	s16 offset = (s16)(sValue * Property.rudder.angle_ratio * (1000.0f / 180.0f));
+	Control.servo[index].writeMicroseconds(center + offset);
+}
+
+
+
+void SetControl(u16 throttle, float x, float y, float z)
+{
+	SetMotor(throttle);
+	z /= 2;
+	SetServo(0, -y + z);
+	SetServo(1, -x + z);
+	SetServo(2,  y + z);
+	SetServo(3,  x + z);
+}
+
+
+
 void SetBeep(u8 pattern, u8 length = 8)
 {
 	//还未开始loop循环, 堵塞鸣叫
@@ -625,7 +656,7 @@ void UpdateBeep()
 		return;
 	}
 
-	u16 t = Beep.wait_timer + Status.delta_time;
+	u16 t = Beep.wait_timer + Status.delta_time_1024;
 	if(t > 255)
 	{
 		Beep.wait_timer = 0;
@@ -646,9 +677,6 @@ void UpdateBeep()
 }
 
 
-
-
-
 //-------------------------------- Configure --------------------------------//
 
 
@@ -661,6 +689,7 @@ void SetState(StateTransferToken token)
 		{
 			SetBeep(0b11, 2);
 			state = eState_LockMode;
+			SetControl(0, 0, 0, 0);
 		}
 	}
 	else if(token == etStateToken_PowerOff)
@@ -700,6 +729,7 @@ void SetState(StateTransferToken token)
 		{
 			SetBeep(0b1001);
 			state = eState_LockMode;
+			SetControl(0, 0, 0, 0);
 		}
 	}
 	else if(token == etStateToken_Unlock)
@@ -734,26 +764,21 @@ void SetRudderBias(ConfigCommandPackage::RudderBiasStruct bias)
 void SetPIDParameter(ConfigCommandPackage::PIDConfigureStruct &config)
 {
 	PIDController &tpid = ((PIDController *)&PID)[config.index];
-	if(config.id == 1)      tpid.kp = config.value;
-	else if(config.id == 2) tpid.ki = config.value;
-	else if(config.id == 3) tpid.kd = config.value;
+	float value = fp32_to_float(config.value);
+	if(config.id == 1)      tpid.kp = value;
+	else if(config.id == 2) tpid.ki = value;
+	else if(config.id == 3) tpid.kd = value;
 	//else if(config.pid.id == 4) tpid.integration_clamp = config.value;
+
+	LOGF("Setting PID[");
+	LOG(config.index);
+	LOGF("][");
+	LOG(config.id);
+	LOGF("] => ");
+	LOGLN(value);
 
 	SetBeep(0b010101, 6);
 }
-
-/*
-void SetPIDParameters(byte *values)
-{
-	for(int i = 0; i < 8; i++)
-	{
-		PID.elements[i].Kp = values[i*4 + 0];
-		PID.elements[i].Ki = values[i*4 + 1];
-		PID.elements[i].Kd = values[i*4 + 2];
-		PID.elements[i]._max_integration = values[i*4 + 3];
-	}
-}
-*/
 
 void ClearPIDIntegration(u8 index)
 {
@@ -890,6 +915,14 @@ void Reset()
 	//.....**.....
 }
 
+void SetLog(byte bytes[4])
+{
+	Config.log_status.value = bytes[0];
+	Config.log_pid.value = bytes[1];
+	Config.log_rudder = bytes[2];
+	Config.log_radio = bytes[3];
+}
+
 
 //读取并应用Configure数据
 RequestFeedbackType ExecuteConfigure(ConfigCommandPackage &config)
@@ -927,15 +960,7 @@ RequestFeedbackType ExecuteConfigure(ConfigCommandPackage &config)
 	case etConfig_Delete:
 		return ClearStored(config.store.cm_flags, config.store.pid_flags) ? etFeedback_Ack : etFeedback_Fail;
 		//Log
-	case etConfig_Log:
-	{
-		Config.log_status.value = config.bytes[0];
-		Config.log_pid.value = config.bytes[1];
-		Config.log_rudder = config.bytes[2];
-		Config.log_radio = config.bytes[3];
-		return etFeedback_Ack;
-	}
-
+	case etConfig_Log:         SetLog(config.bytes);                  return etFeedback_Ack;
 	case etConfig_Reset:       Reset();                               return etFeedback_Ack;
 	}
 
@@ -981,15 +1006,21 @@ bool SendFeedback(RequestFeedbackType request)
 	}
 	if(request == etFeedback_Angles)
 	{
-		Vector3FP32ToVector3FP16(Status.angle, feedback.v3f16);
+		Vector3FToVector3FP16(Status.angle, feedback.v3f16);
 	}
 	else if(request == etFeedback_AngularVelocity)
 	{
-		Vector3FP32ToVector3FP16(Status.angular_velocity, feedback.v3f16);
+		Vector3FToVector3FP16(Status.angular_velocity, feedback.v3f16);
 	}
 	else if(request == etFeedback_Acceleration)
 	{
-		Vector3FP32ToVector3FP16(Status.acceleration, feedback.v3f16);
+		Vector3FToVector3FP16(Status.acceleration, feedback.v3f16);
+	}
+	else if(request == etFeedback_PIDParameters)
+	{
+		u8 index = receive.config_package.get.index;
+		PIDController &pid = ((PIDController *)&PID)[index];
+		Vector3FToVector3FP16(*(Vector3F *)&pid.kp, feedback.v3f16);
 	}
 	else
 	{
@@ -1074,7 +1105,9 @@ RequestFeedbackType HandleReceiveData()
 	else return etFeedback_UnknownPackageType;
 }
 
+
 //----------------------------- Routine Function ------------------------------//
+
 
 //从各设备上获取当前无人机状态
 void UpdateStatus()
@@ -1085,7 +1118,7 @@ void UpdateStatus()
 	//初始化时间
 	if(Status.last_update_time == 0)
 	{
-		Status.delta_time = 8;
+		Status.delta_time_1024 = 8;
 		Status.last_update_time = now_time;
 	}
 	else
@@ -1093,14 +1126,18 @@ void UpdateStatus()
 		// dtime.1 = 1/1024s = 1000000us/1024 = 977us  **u16: 64s溢出**
 		u16 dtime = dtime_us / 977;
 		// dTime钳制到[1, 255]
-		Status.delta_time = dtime > 255 ? 255 : dtime == 0 ? 1 : dtime;
+		Status.delta_time_1024 = dtime > 255 ? 255 : dtime == 0 ? 1 : dtime;
 		Status.last_update_time = now_time;
 		Status.lost_control_timer += dtime;
+
+		Status.delta_time = dtime_us / 1000000.0f;
 	}
 
-	u32 before_update_mpu_time = micros();
 #ifdef USE_HL_MPU6050
+	u32 before_update_mpu_time = micros();
 	mpu.Update(dtime_us);
+	u32 after_update_mpu_time = micros();
+
 	Status.acceleration.x = -mpu.GetAccX();
 	Status.acceleration.y = -mpu.GetAccY();
 	Status.acceleration.z = -mpu.GetAccZ();
@@ -1111,19 +1148,20 @@ void UpdateStatus()
 	Status.angular_velocity.y = -mpu.GetGyroY();
 	Status.angular_velocity.z = -mpu.GetGyroZ();
 #else
+	u32 before_update_mpu_time = micros();
 	mpu.update();
-
-	Status.acceleration.x = -(fp32)(mpu.getAccX() * FP32_1);
-	Status.acceleration.y = -(fp32)(mpu.getAccY() * FP32_1);
-	Status.acceleration.z = -(fp32)(mpu.getAccZ() * FP32_1);
-	Status.angle.x = -(fp32)(mpu.getAngleX() * FP32_1);
-	Status.angle.y = -(fp32)(mpu.getAngleY() * FP32_1);
-	Status.angle.z = -(fp32)(mpu.getAngleZ() * FP32_1);
-	Status.angular_velocity.x = -(fp32)(mpu.getGyroX() * FP32_1);
-	Status.angular_velocity.y = -(fp32)(mpu.getGyroY() * FP32_1);
-	Status.angular_velocity.z = -(fp32)(mpu.getGyroZ() * FP32_1);
-#endif
 	u32 after_update_mpu_time = micros();
+
+	Status.acceleration.x = -mpu.getAccX();
+	Status.acceleration.y = -mpu.getAccY();
+	Status.acceleration.z = -mpu.getAccZ();
+	Status.angle.x = -mpu.getAngleX();
+	Status.angle.y = -mpu.getAngleY();
+	Status.angle.z = -mpu.getAngleZ();
+	Status.angular_velocity.x = -mpu.getGyroX();
+	Status.angular_velocity.y = -mpu.getGyroY();
+	Status.angular_velocity.z = -mpu.getGyroZ();
+#endif
 
 	//**Battery**//
 	//Status.battery_level = analogRead(PIN_BATTERY);
@@ -1133,9 +1171,11 @@ void UpdateStatus()
 	if(Config.log_status.delta_time)
 	{
 		LOGF(" dT= ");
-		LOG(Status.delta_time);
-		//LOG(Status.delta_time * 0.9765625f);
-		//LOG("ms\n");
+		LOG(Status.delta_time_1024);
+
+		LOGF(" / ");
+		LOG(Status.delta_time * 1000.0f);
+		LOG("ms");
 
 		LOGF(" MPU.dT= ");
 		LOG(after_update_mpu_time - before_update_mpu_time);
@@ -1143,120 +1183,74 @@ void UpdateStatus()
 	}
 	if(Config.log_status.angle)
 	{
-		LOGF(" r.x= ");
-		LOG(Status.angle.x / (float)FP32_1);
+		LOGF(" |r.x= ");
+		LOG(Status.angle.x);
 		LOGF(" r.y= ");
-		LOG(Status.angle.y / (float)FP32_1);
+		LOG(Status.angle.y);
 		LOGF(" r.z= ");
-		LOG(Status.angle.z / (float)FP32_1);
+		LOG(Status.angle.z);
 	}
 	if(Config.log_status.angular_velocity)
 	{
-		LOGF(" rv.x= ");
-		LOG(Status.angular_velocity.x / (float)FP32_1);
+		LOGF(" |rv.x= ");
+		LOG(Status.angular_velocity.x);
 		LOGF(" rv.y= ");
-		LOG(Status.angular_velocity.y / (float)FP32_1);
+		LOG(Status.angular_velocity.y);
 		LOGF(" rv.z= ");
-		LOG(Status.angular_velocity.z / (float)FP32_1);
+		LOG(Status.angular_velocity.z);
 	}
 	if(Config.log_status.acceleration)
 	{
-		LOGF(" a.x= ");
-		LOG(Status.acceleration.x / (float)FP32_1);
+		LOGF(" |a.x= ");
+		LOG(Status.acceleration.x);
 		LOGF(" a.y= ");
-		LOG(Status.acceleration.y / (float)FP32_1);
+		LOG(Status.acceleration.y);
 		LOGF(" a.z= ");
-		LOG(Status.acceleration.z / (float)FP32_1);
+		LOG(Status.acceleration.z);
 	}
 }
-
-
-void SetMotor(u16 throttle)
-{
-	Control.throttle = throttle > 1000 ? 1000 : throttle;
-	Control.motor.writeMicroseconds(Control.throttle + Property.throttle.start);
-}
-
-void SetServo(u8 index, s8 value)
-{
-	//滤波平滑 1/8
-	s16 sValue = ((s16)value + (s16)Control.rudders[index] * (u8)7) >> 3;
-	Control.rudders[index] = (s8)sValue;
-
-	// = middle + bias + value * ratio / 16
-	s16 center = (s16)Property.rudder.middle + Property.rudder.bias_us[index];
-	s16 value_us = center + ((sValue * Property.rudder.angle_ratio) >> 4);
-	Control.servo[index].writeMicroseconds(value_us);
-}
-
-
-
-
-void SetControl(u16 throttle, fp16 x, fp16 y, fp16 z)
-{
-	z /= 2;
-	s16 raws[4];
-	raws[0] = -y + z;
-	raws[1] = -x + z;
-	raws[2] = y + z;
-	raws[3] = x + z;
-
-	SetMotor(throttle);
-
-	for(int i = 0; i < 4; i++)
-	{
-		s16 newValue = raws[i] >> (FP16_SHIFT - 7);
-		if(newValue > 127) newValue = 127;
-		else if(newValue < -128) newValue = -128;
-
-		SetServo(i, (s8)newValue);
-	}
-}
-
-
 
 //应用PID
 void UpdatePID()
 {
-	u8 dtime = Status.delta_time;
+	float dtime = Status.delta_time;
 
 	//RX -> VX
-	fp16 target_rx = (fp16)(Command.angle_x << (FP16_SHIFT - Config.action_angle_shift));
-	fp16 rx = (fp16)(Status.angle.x * FP16_1);   //超出[-128, 127]会溢出
-	fp16 vx = (fp16)(Status.angular_velocity.x * (FP16_1 / 100.0f));
+	float target_rx = Command.angle_x / 12.8f;
+	float rx = Status.angle.x;
+	float vx = Status.angular_velocity.x / 100.0f;
 
-	fp16 o_rx = -PID.RX.Step(target_rx, rx, dtime);
-	fp16 o_vx = PID.VX.Step(o_rx, vx, dtime);
-
+	float o_rx = -PID.RX.Step(target_rx, rx, dtime);
+	float o_vx = PID.VX.Step(o_rx, vx, dtime);
 
 	//RY -> VY
-	fp16 target_ry = (fp16)(Command.angle_y << (FP16_SHIFT - Config.action_angle_shift));
-	fp16 ry = (fp16)(Status.angle.y * FP16_1);
-	fp16 vy = (fp16)(Status.angular_velocity.y * (FP16_1 / 100.0f));
+	float target_ry = Command.angle_y / 12.8f;
+	float ry = Status.angle.y;
+	float vy = Status.angular_velocity.y / 100.0f;
 
-	fp16 o_ry = -PID.RY.Step(target_ry, ry, dtime);
-	fp16 o_vy = PID.VY.Step(o_ry, vy, dtime);
+	float o_ry = -PID.RY.Step(target_ry, ry, dtime);
+	float o_vy = PID.VY.Step(o_ry, vy, dtime);
 
 
 	//RZ -> VZ
 	//fp16 target_rz = (fp16)(Command.angle_z << (FP16_SHIFT - Config.action_angle_shift));
-	fp16 rz = (fp16)(Status.angle.z * FP16_1 / 100.0f);//**/100
-	fp16 vz = (fp16)(Status.angular_velocity.z * (FP16_1 / 100.0f));
+	float target_rz = Command.angle_z / 1.6f;  //80*/s
+	float rz = Status.angle.z / 100.0f;
+	float vz = Status.angular_velocity.z / 100.0f;
 
 	//fp16 o_rz = PID.RZ.Step(target_rz, rz, dtime);
 	//fp16 o_vz = PID.VZ.Step(o_rz, vz, dtime);
 
-	fp16 target_rz = (fp16)(Command.angle_z * FP16_1);
 	fp16 o_rz = 0;
 	fp16 o_vz = PID.VZ.Step(target_rz, vz, dtime);
 
 	//LOG
 	if(Config.log_pid.x)
 	{
-		LOGF(" PID.RX= ");
-		LOG(o_rx / 256.0f);
+		LOGF(" |PID.RX= ");
+		LOG(o_rx);
 		LOGF(" PID.VX= ");
-		LOG(o_vx / 256.0f);
+		LOG(o_vx);
 
 		LOGF(" PID.RX.I=");
 		LOG(PID.RX.error_integration);
@@ -1265,10 +1259,10 @@ void UpdatePID()
 	}
 	if(Config.log_pid.y)
 	{
-		LOGF(" PID.RY= ");
-		LOG(o_ry / 256.0f);
+		LOGF(" |PID.RY= ");
+		LOG(o_ry);
 		LOGF(" PID.VY= ");
-		LOG(o_vy / 256.0f);
+		LOG(o_vy);
 
 		LOGF(" PID.RY.I=");
 		LOG(PID.RY.error_integration);
@@ -1277,10 +1271,10 @@ void UpdatePID()
 	}
 	if(Config.log_pid.z)
 	{
-		LOGF(" PID.RZ= ");
-		LOG(o_rz / 256.0f);
+		LOGF(" |PID.RZ= ");
+		LOG(o_rz);
 		LOGF(" PID.VZ= ");
-		LOG(o_vz / 256.0f);
+		LOG(o_vz);
 
 		LOGF(" PID.RZ.I=");
 		LOG(PID.RZ.error_integration);
@@ -1322,7 +1316,7 @@ void UpdateControl()
 		if(Control.throttle > 500) th = 500;
 		else
 		{
-			s16 sth = Control.throttle - Status.delta_time;
+			s16 sth = Control.throttle - Status.delta_time_1024;
 			th = sth < 50 ? 0 : (u16)sth;
 		}
 	}
@@ -1330,9 +1324,9 @@ void UpdateControl()
 	if(Config.use_PID)
 	{
 		UpdatePID();
-		fp16 o_x = PID.VX.output;
-		fp16 o_y = PID.VY.output;
-		fp16 o_z = -PID.VZ.output;   //**----
+		float o_x = PID.VX.output;
+		float o_y = PID.VY.output;
+		float o_z = -PID.VZ.output;   //**----
 		SetControl(th, o_x, o_y, o_z);
 	}
 	else
@@ -1343,14 +1337,14 @@ void UpdateControl()
 	//LOG
 	if(Config.log_rudder)
 	{
-		LOGF(" R.1= ");
-		LOG(Control.rudders[0] / 128.0f);
+		LOGF(" |R.1= ");
+		LOG(Control.rudders[0]);
 		LOGF(" R.2= ");
-		LOG(Control.rudders[1] / 128.0f);
+		LOG(Control.rudders[1]);
 		LOGF(" R.3= ");
-		LOG(Control.rudders[2] / 128.0f);
+		LOG(Control.rudders[2]);
 		LOGF(" R.4= ");
-		LOG(Control.rudders[3] / 128.0f);
+		LOG(Control.rudders[3]);
 	}
 }
 
@@ -1405,8 +1399,7 @@ void loop()
 		SendFeedback(fb);
 	}
 
-	//delay(64);
-	LOG('\n');
-
 	UpdateBeep();
+
+	if(Config.log_status.value || Config.log_pid.value || Config.log_radio || Config.log_rudder ) LOG('\n');
 }
