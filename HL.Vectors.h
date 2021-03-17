@@ -15,6 +15,13 @@ struct Vector3FP16
 	fp16 z;
 };
 
+struct Vector3FP32
+{
+	fp32 x;
+	fp32 y;
+	fp32 z;
+};
+
 
 inline void Vector3FToVector3FP16(const Vector3F &v3f, Vector3FP16 &v3fp16)
 {
@@ -22,14 +29,6 @@ inline void Vector3FToVector3FP16(const Vector3F &v3f, Vector3FP16 &v3fp16)
 	v3fp16.y = (fp16)(v3f.y * FP16_1);
 	v3fp16.z = (fp16)(v3f.z * FP16_1);
 }
-
-
-struct Vector3FP32
-{
-	fp32 x;
-	fp32 y;
-	fp32 z;
-};
 
 inline void Vector3FP32ToVector3FP16(const Vector3FP32 &v3fp32, Vector3FP16 &v3fp16)
 {

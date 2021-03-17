@@ -29,22 +29,22 @@
 #define PIN_RADIO_CE 7  //无线电模块 使能引脚
 #define PIN_RADIO_CS 8  //无线电模块 片选引脚
 
-#define PIN_BEEP A0
-#define PIN_BATTERY A6;
+#define PIN_BEEP    A0
+#define PIN_BATTERY A6
 
 //-------------------------------------- EEPROM ------------------------------------//
 
 #define EADDR_INFO     ((void *)0)  //储存情况的EEPROM储存地址
 #define EADDR_CONFIG   ((void *)8)  //配置的EEPROM储存地址
-#define EADDR_THROTTLE ((void *)16) //油门属性的EEPROM储存地址
-#define EADDR_RUDDER   ((void *)32)
+#define EADDR_THROTTLE ((void *)32) //油门属性的EEPROM储存地址
+#define EADDR_RUDDER   ((void *)40)
 #define EADDR_PID      ((void *)64)
 
 #define ESIZE_INFO     sizeof(StoreInfoStruct)
 #define ESIZE_CONFIG   sizeof(ConfigStruct)
 #define ESIZE_THROTTLE sizeof(PropertyStruct::ThrottleProperty)
 #define ESIZE_RUDDER   sizeof(PropertyStruct::RudderProperty)
-#define ESIZE_PID_PART 12   //4*3 = 12 PID的关键参数大小
+#define ESIZE_PID_PART (sizeof(float) * 3) //PID的关键参数大小
 
 #define EKEY (0b10101010)
 
@@ -84,28 +84,31 @@ enum ConfigCommandType
 	etConfig_ByeBye = 0x02,
 	etConfig_Get = 0x03,  //获取参数
 
-	etConfig_StateToken = 0x05,  //无人机状态转移符
-	etConfig_AngleShift = 0x08,  //控制角度幅度
+	etConfig_StateToken  = 0x05,  //无人机状态转移符
+	etConfig_ActionAngle = 0x08,  //控制角度幅度
 
-	etConfig_Throttle = 0x10,  //油门最大/最小/开始值
-	etConfig_RudderBias = 0x20,
+	etConfig_Throttle    = 0x10,  //油门最大/最小/开始值
+	etConfig_RudderBias  = 0x20,
 	etConfig_RudderRatio = 0x21,
 
-	etConfig_EnablePID = 0x41,
-	etConfig_DisablePID = 0x42,
-	etConfig_SetPID = 0x50,  //设置PID的参数
-	etConfig_ZeroPID = 0x51,  //清空PID的积分
+	etConfig_EnablePID      = 0x41,
+	etConfig_DisablePID     = 0x42,
+	etConfig_EnableCascade  = 0x45,
+	etConfig_DisableCascade = 0x46,
+
+	etConfig_SetPID    = 0x50,  //设置PID的参数
+	etConfig_ZeroPID   = 0x51,  //清空PID的积分
 
 	etConfig_Calibrate = 0x60,  //以当前姿态为基准校正MPU偏移
 
-	etConfig_Store = 0x80,  //储存某参数到EEPROM
-	etConfig_Load = 0x81,  //从EEPROM读取数据
-	etConfig_Delete = 0x8F,  //清除储存到EEPROM的参数
+	etConfig_Store     = 0x80,  //储存某参数到EEPROM
+	etConfig_Load      = 0x81,  //从EEPROM读取数据
+	etConfig_Delete    = 0x8F,  //清除储存到EEPROM的参数
 
-	etConfig_Log = 0xB1,  //控制打印的信息
+	etConfig_Log       = 0xB1,  //控制打印的信息
 
-	//重置所有参数 ...未支持
-	etConfig_Reset = 0xAB,
+	//重置所有参数
+	etConfig_Reset     = 0xAB,
 
 };
 
@@ -137,20 +140,21 @@ enum RequestFeedbackType
 };
 
 
-//状态转移符:     PowerOn        Unlock       Launch
-//                0x01          0xFA         0x11
-//       PowerOff <=>  LockMode <=> SafeMode <=> FlightMode
-//          ^     0x88    |     0xF0   |     0xFE
-//     0x88 +-------------+------------+    SafeMode
+//状态转移符:   PowerOn        Unlock       Launch
+//              0x01          0xFA         0x11
+//     PowerOff <=>  LockMode <=> SafeMode <=> FlightMode
+//        ^     0x88    |     0xF0   |     0xFE
+//        |   PowerOff  |     Lock   |    SafeMode
+//        \-------------/------------/ 0x88 PowerOff
 enum StateTransferToken
 {
-	etStateToken_PowerOn = 0x01, //? => 锁定模式
+	etStateToken_PowerOn  = 0x01, //? => 锁定模式
 	etStateToken_PowerOff = 0x88, //锁定模式/安全模式 => 
 
-	etStateToken_Lock = 0xF0,   //安全模式 => 锁定模式
+	etStateToken_Lock   = 0xF0,   //安全模式 => 锁定模式
 	etStateToken_Unlock = 0xFA,   //锁定模式 => 安全模式
 
-	etStateToken_Launch = 0x11, //安全模式 => 飞行模式
+	etStateToken_Launch   = 0x11, //安全模式 => 飞行模式
 	etStateToken_SafeMode = 0xFE, //飞行模式 => 安全模式
 };
 
@@ -197,11 +201,11 @@ struct ConfigCommandPackage
 			//u16 start;
 		}throttle;
 
-		struct RudderBiasStruct
+		struct RudderCenterStruct
 		{
 			u8 index;
-			s8 value;
-		}rudder_bias;
+			u16 value;
+		}rudder_center;
 
 		struct PIDConfigureStruct
 		{
@@ -231,9 +235,9 @@ struct ControlCommandPackage
 	u8 request;
 
 	u16 throttle;  //油门T [0, 1000] **本来应该控制竖直速度
-	s8 angle_x;    //倾斜X 绝对值 [-128, 127] => (value >> shift)°  (默认(shift = 4) => [-16°, 16°])
-	s8 angle_y;    //倾斜Y 绝对值
-	s16 angle_z;   //偏航Z **本来应该是绝对值的, 但目前只能相对控制, 所以实际用于相对控制
+	s8 angle_x;    //X倾斜角度 angle = value/128 * action_angle(deg);
+	s8 angle_y;    //Y倾斜角度
+	s16 angle_z;   //Z偏航速度 [-128, 127] => velocity(float) = value;
 };
 
 
@@ -263,12 +267,11 @@ struct FeedbackPackage
 //无人机配置参数 (可以动态变化的量)
 struct ConfigStruct
 {
-	u8 action_angle_shift;   //用于切换动作幅度, [0, 5] 默认4=>16(1/16) 0=>128(1/1) 5=>8(1/32)
+	u8 action_angle;      //姿态倾斜角幅度(deg)
 
-	bool use_PID;            //是否应用PID控制
+	bool use_PID;         //是否应用PID控制
+	bool use_cascade;     //是否应用串级(内外环)
 
-	//u8 log_status_angle;     //是否打印角度
-	//u8 log_status_angle_velocity;
 	union
 	{
 		struct
@@ -279,7 +282,7 @@ struct ConfigStruct
 			bool delta_time : 1;
 		};
 		u8 value;
-	}log_status;
+	}log_status;          //是否打印状态信息
 
 	union
 	{
@@ -290,13 +293,12 @@ struct ConfigStruct
 			bool z : 1;
 		};
 		u8 value;
-	}log_pid;
+	}log_pid;             //是否打印PID输出
 
-	//u8 log_pid;       //是否打印PID输出
-	bool log_rudder;       //是否打印舵位置
-	bool log_radio;          //是否打印无线电信息
+	bool log_rudder;      //是否打印舵位置
+	bool log_radio;       //是否打印无线电信息
 
-}Config = { 4, true, 0b0000, 0b000, false, false };
+}Config = { 16, true, true, 0b0000, 0b000, false, false };
 
 
 //无人机初始属性 (可以设为static的量)
@@ -304,20 +306,17 @@ struct PropertyStruct
 {
 	struct ThrottleProperty
 	{
-		u16 start;      //0油门对应的PWM信号时长(us)
-		u16 range;      //油门信号范围
-		//u8 start;       //电机开始转动对应的油门
-
+		u16 start;        //0油门对应的PWM信号时长(us)
+		u16 range;        //油门信号范围(us)
 	}throttle;
 
 	struct RudderProperty
 	{
-		u16 middle;      //PWM信号中间值(us)
-		s8 bias_us[4];   //针对安装情况设置的中间值偏移
-		u8 angle_ratio;  //舵片单侧转角，PWM信号变化范围 = value * angle_ratio * (1000/180) (*)
+		u16 middle[4];    //PWM信号中间值(us) 针对舵机型号和安装情况设置
+		u8 angle_range;   //舵片单侧转角(deg) PWM信号变化范围 = Control.angle[-1,1f] * value * (1000/180) (us)
 	}rudder;
 
-}Property = { { 1000, 1000 }, { 1500, { 0, 0, 0, 0 }, 16 } };
+}Property = { { 1000, 1000 }, { { 1500, 1500, 1500, 1500 }, 16 } };
 
 
 //无人机状态
@@ -456,22 +455,39 @@ void InitProperty()
 
 
 	//PID.X
-	PID.RX.kp = 0.1f;   //0.1
-	PID.RX.ki = 0;
-	PID.RX.kd = 0.05f;   //0.05
+	//PID.RX.kp = 0.1f;   //0.1
+	//PID.RX.ki = 0;
+	//PID.RX.kd = 0.05f;   //0.05
+	//
+	//PID.VX.kp = 2.0f;
+	//PID.VX.ki = 1.0f;
+	//PID.VX.kd = 0;
+	//
+	////PID.Y
+	//PID.RY.kp = 0.1f;
+	//PID.RY.ki = 0;
+	//PID.RY.kd = 0.05f;
+	//
+	//PID.VY.kp = 2.0f;
+	//PID.VY.ki = 1.0f;
+	//PID.VY.kd = 0;
 
-	PID.VX.kp = 2.0f;
-	PID.VX.ki = 1.0f;
-	PID.VX.kd = 0;+
+	PID.RX.kp = 0.2f;
+	PID.RX.ki = 0.0f;  //=> 1-4
+	PID.RX.kd = 0.0f;  //=> 0-1
+	
+	PID.VX.kp = 1.0f;
+	PID.VX.ki = 0.0f;
+	PID.VX.kd = 0.0;
 
 	//PID.Y
-	PID.RY.kp = 0.1f;
-	PID.RY.ki = 0;
-	PID.RY.kd = 0.05f;
+	PID.RY.kp = 0.2f;
+	PID.RY.ki = 0.0f;
+	PID.RY.kd = 0.0f;
 
-	PID.VY.kp = 2.0f;
-	PID.VY.ki = 1.0f;
-	PID.VY.kd = 0;
+	PID.VY.kp = 1.0f;
+	PID.VY.ki = 0.0f;
+	PID.VY.kd = 0.0f;
 
 	//PID.Z
 	/*
@@ -483,23 +499,24 @@ void InitProperty()
 	PID.VZ.ki = FP16_1;
 	PID.VZ.kd = 0;
 	*/
-	PID.RZ.kp = 0;
+	PID.RZ.kp = 0.2f;
 	PID.RZ.ki = 0;
 	PID.RZ.kd = 0;
 
-	PID.VZ.kp = 0.5f;
-	PID.VZ.ki = 0;
-	PID.VZ.kd = 0.1f;
+	PID.VZ.kp = 2.0f;
+	PID.VZ.ki = 1.0f;
+	PID.VZ.kd = 0;
 
+	//***DEBUG***//
+	//DeleteStored({ 0xFF, 0xFF });
 
 	//读取之前储存的数据
-	eeprom_busy_wait();
-	eeprom_read_block(&StoreInfo, EADDR_INFO, ESIZE_INFO);
+	LoadBytes(&StoreInfo, EADDR_INFO, ESIZE_INFO);
 
 	//判断有无储存过数据
 	if(StoreInfo.key == EKEY)
 	{
-		PersistParameters(StoreInfo.flags, StoreInfo.pid_flags, false);
+		PersistParameters({ StoreInfo.flags, StoreInfo.pid_flags }, false);
 	}
 	else
 	{
@@ -532,7 +549,7 @@ bool InitRadio()
 	//关闭自动确认和重试
 	//radio.setAutoAck(false);
 	//radio.setRetries(0, 0);
-	radio.setChannel(92);
+	radio.setChannel(102);
 
 	// Set the PA Level low to try preventing power supply related problems
 	// because these examples are likely run with nodes in close proximity to
@@ -595,13 +612,14 @@ void SetServo(u8 index, float value)
 	if(value > 1) value = 1;
 	else if(value < -1) value = -1;
 
-	//滤波平滑 1/8
-	float sValue = value * 0.1f + Control.rudders[index] * 0.9f;
+	//滤波平滑 20%
+	const float cof = 0.8f;
+	float sValue = value * (1 - cof) + Control.rudders[index] * cof;
 	Control.rudders[index] = sValue;
 
 	// = middle + bias + value * ratio / 16
-	s16 center = (s16)Property.rudder.middle + Property.rudder.bias_us[index];
-	s16 offset = (s16)(sValue * Property.rudder.angle_ratio * (1000.0f / 180.0f));
+	s16 center = (s16)Property.rudder.middle[index];
+	s16 offset = (s16)(sValue * Property.rudder.angle_range * (1000.0f / 180.0f));
 	Control.servo[index].writeMicroseconds(center + offset);
 }
 
@@ -644,7 +662,7 @@ void SetBeep(u8 pattern, u8 length = 8)
 	}
 }
 
-void UpdateBeep()
+void UpdateBeep(u8 delta_time_1024)
 {
 	//无蜂鸣器任务
 	if(Beep.pattern == 0) return;
@@ -656,8 +674,8 @@ void UpdateBeep()
 		return;
 	}
 
-	u16 t = Beep.wait_timer + Status.delta_time_1024;
-	if(t > 255)
+	u16 t = Beep.wait_timer + delta_time_1024;
+	if(t > 128)
 	{
 		Beep.wait_timer = 0;
 
@@ -752,9 +770,9 @@ void SetThrottleProperty(ConfigCommandPackage::ThrottlePropertyStruct &throttle)
 }
 
 
-void SetRudderBias(ConfigCommandPackage::RudderBiasStruct bias)
+void SetRudderBias(ConfigCommandPackage::RudderCenterStruct center)
 {
-	Property.rudder.bias_us[bias.index] = bias.value;
+	Property.rudder.middle[center.index] = center.value;
 
 	SetBeep(0b1, 2);
 }
@@ -801,25 +819,27 @@ void ClearPIDIntegration(u8 index)
 }
 
 
-/*
-bool StoreBytes(void *pos, const void *data, u8 size)
+
+bool StoreBytes(const void *data, void *pos, u8 size)
 {
 	eeprom_busy_wait();
 	eeprom_update_block(data, pos, size);
 	return true;
 }
 
-bool LoadBytes(const void *pos, void *buffer, u8 size)
+bool LoadBytes(void *buffer, const void *pos, u8 size)
 {
 	eeprom_busy_wait();
 	eeprom_read_block(buffer, pos, size);
 	return true;
 }
-*/
 
 
-bool PersistParameters(u8 cm_flags, u8 pid_flags, bool is_store)
+bool PersistParameters(ConfigCommandPackage::StoreStruct store, bool is_store)
 {
+	u8 cm_flags = store.cm_flags;
+	u8 pid_flags = store.pid_flags;
+
 	//u8 * const addr_info_key = &((StoreInfoStruct *)EADDR_INFO)->key;
 	//u8 * const addr_info_flags = &((StoreInfoStruct *)EADDR_INFO)->flags;
 	if(cm_flags)
@@ -836,14 +856,18 @@ bool PersistParameters(u8 cm_flags, u8 pid_flags, bool is_store)
 				if(is_store)
 				{
 					StoreInfo.flags |= fg;
-					eeprom_busy_wait();
-					eeprom_update_block(&StoreInfo, EADDR_INFO, ESIZE_INFO);
-					eeprom_update_block(target[i], address[i], size[i]);
+					StoreBytes(&StoreInfo, EADDR_INFO, ESIZE_INFO);
+					StoreBytes(target[i], address[i], size[i]);
+					LOGF("\nStore parameters[");
+					LOG(i);
+					LOGF("]\n");
 				}
 				else
 				{
-					eeprom_busy_wait();
-					eeprom_read_block(target[i], address[i], size[i]);
+					LoadBytes(target[i], address[i], size[i]);
+					LOGF("\nLoad parameters[");
+					LOG(i);
+					LOGF("]\n");
 				}
 			}
 		}
@@ -861,14 +885,18 @@ bool PersistParameters(u8 cm_flags, u8 pid_flags, bool is_store)
 				if(is_store)
 				{
 					StoreInfo.pid_flags |= fg;
-					eeprom_busy_wait();
-					eeprom_update_block(&StoreInfo, EADDR_INFO, ESIZE_INFO);
-					eeprom_update_block(parameters, address, ESIZE_PID_PART);
+					StoreBytes(&StoreInfo, EADDR_INFO, ESIZE_INFO);
+					StoreBytes(parameters, address, ESIZE_PID_PART);
+					LOGF("\nStore PID[");
+					LOG(i);
+					LOGF("]\n");
 				}
 				else
 				{
-					eeprom_busy_wait();
-					eeprom_read_block(parameters, address, ESIZE_PID_PART);
+					LoadBytes(parameters, address, ESIZE_PID_PART);
+					LOGF("\nLoad PID[");
+					LOG(i);
+					LOGF("]\n");
 				}
 			}
 		}
@@ -878,12 +906,16 @@ bool PersistParameters(u8 cm_flags, u8 pid_flags, bool is_store)
 	return true;
 }
 
-bool ClearStored(u8 cm_flags, u8 pid_flags)
+bool DeleteStored(ConfigCommandPackage::StoreStruct store)
 {
-	StoreInfo.flags &= ~cm_flags;
-	StoreInfo.pid_flags &= ~pid_flags;
-	eeprom_busy_wait();
-	eeprom_update_block(&StoreInfo, EADDR_INFO, ESIZE_INFO);
+	StoreInfo.flags &= ~store.cm_flags;
+	StoreInfo.pid_flags &= ~store.pid_flags;
+	StoreBytes(&StoreInfo, EADDR_INFO, ESIZE_INFO);
+
+	LOGF("\nDelete Stored: ");
+	LOG(store.cm_flags, BIN);
+	LOGF("  PID: ");
+	LOGLN(store.pid_flags, BIN);
 
 	SetBeep(0b11110101);
 	return true;
@@ -936,29 +968,28 @@ RequestFeedbackType ExecuteConfigure(ConfigCommandPackage &config)
 	{
 	case etConfig_Hello:       connected = true;                      return etFeedback_Ack;
 	case etConfig_ByeBye:      connected = false;                     return etFeedback_Ack;
-	case etConfig_Get:         return (RequestFeedbackType)config.get.target;
+	case etConfig_Get:         return (RequestFeedbackType)config.get.target; //返回发送目标
 
 	case etConfig_StateToken:  SetState((StateTransferToken)config.value_u8); return etFeedback_Ack;
 		//Config
-	case etConfig_AngleShift:  Config.action_angle_shift = config.value_u8;   return etFeedback_Ack;  //未检查值
+	case etConfig_ActionAngle:  Config.action_angle = config.value_u8; return etFeedback_Ack;  //未检查值
 		//Property
 	case etConfig_Throttle:    SetThrottleProperty(config.throttle);  return etFeedback_Ack;
-	case etConfig_RudderBias:  SetRudderBias(config.rudder_bias);     return etFeedback_Ack;
-	case etConfig_RudderRatio: Property.rudder.angle_ratio = config.value_u8; return etFeedback_Ack;
+	case etConfig_RudderBias:  SetRudderBias(config.rudder_center);   return etFeedback_Ack;
+	case etConfig_RudderRatio: Property.rudder.angle_range = config.value_u8; return etFeedback_Ack;
 		//PID
 	case etConfig_EnablePID:   Config.use_PID = true;                 return etFeedback_Ack;
 	case etConfig_DisablePID:  Config.use_PID = false;                return etFeedback_Ack;
+	case etConfig_EnableCascade:  Config.use_cascade = true;          return etFeedback_Ack;
+	case etConfig_DisableCascade: Config.use_cascade = false;         return etFeedback_Ack;
 	case etConfig_SetPID:      SetPIDParameter(config.pid);           return etFeedback_Ack;
 	case etConfig_ZeroPID:     ClearPIDIntegration(config.value_u8);  return etFeedback_Ack;
 		//Calibrate
 	case etConfig_Calibrate:   Calibrate();                           return etFeedback_Ack;
 		//Store
-	case etConfig_Store:
-		return PersistParameters(config.store.cm_flags, config.store.pid_flags, true) ? etFeedback_Ack : etFeedback_Fail;
-	case etConfig_Load:
-		return PersistParameters(config.store.cm_flags, config.store.pid_flags, false) ? etFeedback_Ack : etFeedback_Fail;
-	case etConfig_Delete:
-		return ClearStored(config.store.cm_flags, config.store.pid_flags) ? etFeedback_Ack : etFeedback_Fail;
+	case etConfig_Store:       return PersistParameters(config.store, true)  ? etFeedback_Ack : etFeedback_Fail;
+	case etConfig_Load:        return PersistParameters(config.store, false) ? etFeedback_Ack : etFeedback_Fail;
+	case etConfig_Delete:      return DeleteStored(config.store) ? etFeedback_Ack : etFeedback_Fail;
 		//Log
 	case etConfig_Log:         SetLog(config.bytes);                  return etFeedback_Ack;
 	case etConfig_Reset:       Reset();                               return etFeedback_Ack;
@@ -993,6 +1024,7 @@ bool SendFeedback(RequestFeedbackType request)
 {
 	if(request == etFeedback_None) return false;
 
+	u32 t_start_send = micros();
 	//#=>发送模式
 	radio.stopListening();
 
@@ -1030,12 +1062,20 @@ bool SendFeedback(RequestFeedbackType request)
 	//feedback.battery_level = Status.battery_level;
 
 	bool result = radio.write(&feedback, BUFFER_SIZE);
+	u32 t_end = micros();
 
 	if(Config.log_radio)
 	{
 		LOGF("\nSend feedback: ");
-		if(result) { LOGF("Successed\n"); }
-		else { LOGF("Failed\n"); }
+		if(result) { LOGF("Successed  "); }
+		else { LOGF("Failed  "); }
+
+		LOG((t_end - t_start_send) / 1000.0);
+		LOGF("ms");
+
+		u8 retry_count = radio.getARC();
+		LOGF("  Retry Count = ");
+		LOGLN(retry_count);
 	}
 
 	//#=>接收模式
@@ -1069,38 +1109,15 @@ RequestFeedbackType HandleReceiveData()
 	}
 	else if(ptype == etPackage_Config)
 	{
-		u32 t_start = micros();
 		RequestFeedbackType fb = ExecuteConfigure(receive.config_package);
-
-		//if(fb != etFeedback_None) SendFeedback(fb);
 
 		//马上发送结果
 		if(fb == etFeedback_Ack || fb == etFeedback_Fail)
 		{
 			//delay(2);  //***DEBUG
-			u32 t_start_ack = micros();
-
-			SendFeedback(fb);
-
-			if(Config.log_radio)
-			{
-				u32 t_end = micros();
-				LOG((t_start_ack - t_start) / 1000.0);
-				LOGF("ms  ");
-				LOG((t_end - t_start) / 1000.0);
-				LOGF("ms");
-
-				u8 retry_count = radio.getARC();
-				LOGF("  Retry Count = ");
-				LOGLN(retry_count);
-			}
-
-			return etFeedback_None;
+			return SendFeedback(fb) ? etFeedback_None : fb; //如果失败，后续重试一次
 		}
-		else
-		{
-			return fb;
-		}
+		else return fb;
 	}
 	else return etFeedback_UnknownPackageType;
 }
@@ -1127,10 +1144,9 @@ void UpdateStatus()
 		u16 dtime = dtime_us / 977;
 		// dTime钳制到[1, 255]
 		Status.delta_time_1024 = dtime > 255 ? 255 : dtime == 0 ? 1 : dtime;
+		Status.delta_time = dtime_us / 1000000.0f;
 		Status.last_update_time = now_time;
 		Status.lost_control_timer += dtime;
-
-		Status.delta_time = dtime_us / 1000000.0f;
 	}
 
 #ifdef USE_HL_MPU6050
@@ -1149,7 +1165,7 @@ void UpdateStatus()
 	Status.angular_velocity.z = -mpu.GetGyroZ();
 #else
 	u32 before_update_mpu_time = micros();
-	mpu.update();
+	mpu.update(Status.delta_time);
 	u32 after_update_mpu_time = micros();
 
 	Status.acceleration.x = -mpu.getAccX();
@@ -1164,8 +1180,7 @@ void UpdateStatus()
 #endif
 
 	//**Battery**//
-	//Status.battery_level = analogRead(PIN_BATTERY);
-	Status.battery_level = 255;
+	Status.battery_level = analogRead(PIN_BATTERY);
 
 	//DEBUG//
 	if(Config.log_status.delta_time)
@@ -1213,74 +1228,116 @@ void UpdateStatus()
 //应用PID
 void UpdatePID()
 {
-	float dtime = Status.delta_time;
+	const float dtime = Status.delta_time;
+	const u8 avFactor = 32;  //32/64/100 影响角速度PID的量级
 
-	//RX -> VX
-	float target_rx = Command.angle_x / 12.8f;
-	float rx = Status.angle.x;
-	float vx = Status.angular_velocity.x / 100.0f;
-
-	float o_rx = -PID.RX.Step(target_rx, rx, dtime);
-	float o_vx = PID.VX.Step(o_rx, vx, dtime);
-
-	//RY -> VY
-	float target_ry = Command.angle_y / 12.8f;
-	float ry = Status.angle.y;
-	float vy = Status.angular_velocity.y / 100.0f;
-
-	float o_ry = -PID.RY.Step(target_ry, ry, dtime);
-	float o_vy = PID.VY.Step(o_ry, vy, dtime);
-
-
-	//RZ -> VZ
-	//fp16 target_rz = (fp16)(Command.angle_z << (FP16_SHIFT - Config.action_angle_shift));
-	float target_rz = Command.angle_z / 1.6f;  //80*/s
-	float rz = Status.angle.z / 100.0f;
-	float vz = Status.angular_velocity.z / 100.0f;
-
-	//fp16 o_rz = PID.RZ.Step(target_rz, rz, dtime);
-	//fp16 o_vz = PID.VZ.Step(o_rz, vz, dtime);
-
-	fp16 o_rz = 0;
-	fp16 o_vz = PID.VZ.Step(target_rz, vz, dtime);
-
-	//LOG
-	if(Config.log_pid.x)
+	if(Config.use_cascade)
 	{
-		LOGF(" |PID.RX= ");
-		LOG(o_rx);
-		LOGF(" PID.VX= ");
-		LOG(o_vx);
+		//RX -> VX
+		float target_rx = ((s16)(Command.angle_x) * Config.action_angle) / 128.0f;
+		float rx = Status.angle.x;
+		float vx = Status.angular_velocity.x / avFactor;
 
-		LOGF(" PID.RX.I=");
-		LOG(PID.RX.error_integration);
-		LOGF(" PID.VX.I=");
-		LOG(PID.VX.error_integration);
+		float o_rx = PID.RX.Step(target_rx, rx, dtime);
+		float o_vx = PID.VX.Step(o_rx, vx, dtime);
+
+
+		//RY -> VY
+		float target_ry = ((s16)(Command.angle_y) * Config.action_angle) / 128.0f;
+		float ry = Status.angle.y;
+		float vy = Status.angular_velocity.y / avFactor;
+
+		float o_ry = PID.RY.Step(target_ry, ry, dtime);
+		float o_vy = PID.VY.Step(o_ry, vy, dtime);
+
+
+		//RZ -> VZ
+		float target_rz = ((s16)(Command.angle_z) * Config.action_angle) / 128.0f;
+		float rz = Status.angle.z;
+		float vz = Status.angular_velocity.z / avFactor;
+
+		float o_rz = PID.RZ.Step(target_rz, rz, dtime);
+		float o_vz = PID.VZ.Step(o_rz, vz, dtime);
+
+		//LOG
+		if(Config.log_pid.x)
+		{
+			LOGF(" |PID.RX= ");
+			LOG(o_rx);
+			LOGF(" PID.VX= ");
+			LOG(o_vx);
+
+			LOGF(" RX.I=");
+			LOG(PID.RX.error_integration);
+			LOGF(" VX.I=");
+			LOG(PID.VX.error_integration);
+		}
+		if(Config.log_pid.y)
+		{
+			LOGF(" |PID.RY= ");
+			LOG(o_ry);
+			LOGF(" PID.VY= ");
+			LOG(o_vy);
+
+			LOGF(" RY.I=");
+			LOG(PID.RY.error_integration);
+			LOGF(" VY.I=");
+			LOG(PID.VY.error_integration);
+		}
+		if(Config.log_pid.z)
+		{
+			LOGF(" |PID.RZ= ");
+			LOG(o_rz);
+			LOGF(" PID.VZ= ");
+			LOG(o_vz);
+
+			LOGF(" RZ.I=");
+			LOG(PID.RZ.error_integration);
+			LOGF(" VZ.I=");
+			LOG(PID.VZ.error_integration);
+		}
 	}
-	if(Config.log_pid.y)
+	else
 	{
-		LOGF(" |PID.RY= ");
-		LOG(o_ry);
-		LOGF(" PID.VY= ");
-		LOG(o_vy);
+		//RX -> VX
+		float target_vx = ((s16)(Command.angle_x) * Config.action_angle) / (128.0f * avFactor);
+		float vx = Status.angular_velocity.x / avFactor;
+		float o_vx = PID.VX.Step(target_vx, vx, dtime);
 
-		LOGF(" PID.RY.I=");
-		LOG(PID.RY.error_integration);
-		LOGF(" PID.VY.I=");
-		LOG(PID.VY.error_integration);
-	}
-	if(Config.log_pid.z)
-	{
-		LOGF(" |PID.RZ= ");
-		LOG(o_rz);
-		LOGF(" PID.VZ= ");
-		LOG(o_vz);
+		//RY -> VY
+		float target_vy = ((s16)(Command.angle_y) * Config.action_angle) / (128.0f * avFactor);
+		float vy = Status.angular_velocity.y / avFactor;
+		float o_vy = PID.VY.Step(target_vy, vy, dtime);
 
-		LOGF(" PID.RZ.I=");
-		LOG(PID.RZ.error_integration);
-		LOGF(" PID.VZ.I=");
-		LOG(PID.VZ.error_integration);
+		//RZ -> VZ
+		float target_vz = ((s16)(Command.angle_z) * Config.action_angle) / (128.0f * avFactor);
+		float vz = Status.angular_velocity.z / avFactor;
+		float o_vz = PID.VZ.Step(target_vz, vz, dtime);
+
+		//LOG
+		if(Config.log_pid.x)
+		{
+			LOGF(" |PID.VX= ");
+			LOG(o_vx);
+			LOGF(" I=");
+			LOG(PID.VX.error_integration);
+		}
+		if(Config.log_pid.y)
+		{
+			LOGF(" |PID.VY= ");
+			LOG(o_vy);
+			LOGF(" I=");
+			LOG(PID.VY.error_integration);
+		}
+		if(Config.log_pid.z)
+		{
+			LOGF(" |PID.VZ= ");
+			LOG(o_vz);
+			LOGF(" I=");
+			LOG(PID.VZ.error_integration);
+		}
 	}
+
 
 }
 
@@ -1324,8 +1381,8 @@ void UpdateControl()
 	if(Config.use_PID)
 	{
 		UpdatePID();
-		float o_x = PID.VX.output;
-		float o_y = PID.VY.output;
+		float o_x = -PID.VX.output;
+		float o_y = -PID.VY.output;
 		float o_z = -PID.VZ.output;   //**----
 		SetControl(th, o_x, o_y, o_z);
 	}
@@ -1394,12 +1451,9 @@ void loop()
 	UpdateControl();
 
 	//延迟发送的回传
-	if(fb != etFeedback_None)
-	{
-		SendFeedback(fb);
-	}
+	if(fb != etFeedback_None) SendFeedback(fb);
 
-	UpdateBeep();
+	UpdateBeep(Status.delta_time_1024);
 
 	if(Config.log_status.value || Config.log_pid.value || Config.log_radio || Config.log_rudder ) LOG('\n');
 }
