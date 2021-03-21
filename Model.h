@@ -196,6 +196,8 @@ class Model
 
 	//设定某个PID的某个参数
 	void SetPIDParameter(u8 index, u8 id, fp32 value_fp32);
+	void SetPIDParameter(u8 index, s16 kp, s16 ki, s16 kd);
+	void ConfigPID(u8 index, byte u8);
 
 	void Calibrate();
 

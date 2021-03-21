@@ -42,13 +42,15 @@ class Synchronizer
 		etConfig_DisablePID = 0x42,
 		etConfig_EnableCascade = 0x45,
 		etConfig_DisableCascade = 0x46,
+		etConfig_ConfigPID = 0x4A,
 
-		etConfig_SetPID = 0x51,  //设置PID的参数
+		etConfig_SetPID = 0x50,  //设置PID的参数
+		etConfig_SetPID_1 = 0x51,
 		//etConfig_ZeroPID   = 0x52,  //清空PID的积分
-		etConfig_StorePID = 0x5A,
-		etConfig_LoadPID = 0x5B,
-		etConfig_ResetPID = 0x5E,
-		etConfig_DeletePID = 0x5F,
+		//etConfig_StorePID = 0x5A,
+		//etConfig_LoadPID = 0x5B,
+		//etConfig_ResetPID = 0x5E,
+		//etConfig_DeletePID = 0x5F,
 
 		etConfig_Store = 0x8A,  //储存某参数到EEPROM
 		etConfig_Load = 0x8B,  //从EEPROM读取数据
@@ -131,6 +133,7 @@ class Synchronizer
 			u16 value_u16;
 			u32 value_u32;
 			u8 bytes[6];
+			s16 s16s[3];
 
 			struct ThrottlePropertyStruct
 			{
@@ -178,12 +181,14 @@ class Synchronizer
 
 	struct FeedbackPackage
 	{
-		u8 flag;
 		u8 request;
+		//u8 flag;
+		u8 u8;
 
 		union
 		{
 			byte bytes[6];
+			s16 s16s[3];
 			Vector3FP16 v3f16; //姿态角度/角速度/加速度
 
 			struct
@@ -211,7 +216,7 @@ class Synchronizer
 	RF24 radio;
 
 	//无线电收发机的地址
-	const u8 address[2][5] = { "S1234", "C5678" };
+	const u8 address[2][6] = { "S1234", "C5678" };
 
 	//是否与发送机建立通信
 	bool connected;
@@ -331,11 +336,24 @@ class Synchronizer
 			LOGF("Executing configure: ");
 			LOGLN(config.command);
 		}
+
+		if((config.command & 0xF0) == etConfig_SetPID)
+		{
+			u8 index = config.command & 0x0F;
+			model.SetPIDParameter(index, config.s16s[0], config.s16s[1], config.s16s[2]);
+			return etFeedback_Ack;
+		}
+
 		switch(config.command)
 		{
 			//System
-		//case etConfig_Hello:       connected = true;                      return etFeedback_Ack;
-		case etConfig_ByeBye:      connected = false;                     return etFeedback_Ack;
+		case etConfig_Hello:       connected = true;                      return etFeedback_Ack;
+		case etConfig_ByeBye:
+		{
+			connected = false;
+			SetState(model, etStateToken_PowerOff);
+			return etFeedback_Ack;
+		}
 		case etConfig_Get:         return (RequestFeedbackType)config.get.target; //返回发送目标
 			//Config
 		case etConfig_StateToken:  SetState(model, (StateTransferToken)config.value_u8); return etFeedback_Ack;
@@ -352,18 +370,26 @@ class Synchronizer
 		case etConfig_DisablePID:  model.config.use_PID = false;          return etFeedback_Ack;
 		case etConfig_EnableCascade:   model.config.use_cascade = true;   return etFeedback_Ack;
 		case etConfig_DisableCascade:  model.config.use_cascade = false;  return etFeedback_Ack;
+		case etConfig_ConfigPID: model.ConfigPID(config.pid.index, 0);    return etFeedback_Ack;
+		//case etConfig_SetPID:
+			//model.SetPIDParameter(config.pid.index, config.pid.id, config.pid.value); return etFeedback_Ack;
 
-		case etConfig_SetPID:
-			model.SetPIDParameter(config.pid.index, config.pid.id, config.pid.value); return etFeedback_Ack;
-		case etConfig_StorePID:    return FB_RESULT(Storage::StorePIDs(model.GetPIDs(), config.value_u8));
-		case etConfig_LoadPID:     return FB_RESULT(Storage::LoadPIDs(model.GetPIDs(), config.value_u8));
-		case etConfig_ResetPID:    return FB_RESULT(Storage::ResetPIDs(model.GetPIDs(), config.value_u8));
-		case etConfig_DeletePID:   return FB_RESULT(Storage::ClearFlags(0, config.value_u8));
 			//Store
-		case etConfig_Store:       return FB_RESULT(Storage::StoreParameters(model, config.value_u8));
-		case etConfig_Load:        return FB_RESULT(Storage::LoadParameters(model, config.value_u8));
-		case etConfig_Reset:       return FB_RESULT(Storage::ResetParameters(model, config.value_u8));
-		case etConfig_Delete:      return FB_RESULT(Storage::ClearFlags(config.value_u8, 0));
+		case etConfig_Store:
+			return ((config.store.cm_flags && !Storage::StoreParameters(model, config.store.cm_flags))
+				| (config.store.pid_flags && !Storage::StorePIDs(model.GetPIDs(), config.store.pid_flags)))
+				? etFeedback_Fail : etFeedback_Ack;
+		case etConfig_Load:
+			return ((config.store.cm_flags && !Storage::LoadParameters(model, config.store.cm_flags))
+				| (config.store.pid_flags && !Storage::LoadPIDs(model.GetPIDs(), config.store.pid_flags)))
+				? etFeedback_Fail : etFeedback_Ack;
+		case etConfig_Reset:
+			return ((config.store.cm_flags && !Storage::ResetParameters(model, config.store.cm_flags))
+				| (config.store.pid_flags && !Storage::ResetPIDs(model.GetPIDs(), config.store.pid_flags)))
+				? etFeedback_Fail : etFeedback_Ack;
+		case etConfig_Delete:
+			return Storage::ClearFlags(config.store.cm_flags, config.store.pid_flags)
+				? etFeedback_Ack : etFeedback_Fail;
 			//Log
 		case etConfig_Log:
 		{
@@ -387,7 +413,7 @@ class Synchronizer
 			radio.read(&receive, BUFFER_SIZE);
 			if(bLog)
 			{
-				LOGF("Receive Data: 0b");
+				LOGF("\nReceive Data: 0b");
 				LOGLN(*(u8 *)&receive.head, BIN);
 			}
 			return true;
@@ -406,16 +432,22 @@ class Synchronizer
 		radio.stopListening();
 
 		FeedbackPackage feedback;
-		feedback.flag = 0b10101010;
+		//feedback.flag = 0b10101010;
 		feedback.request = (u8)request; //*Ack/Fail/Others
+		feedback.u8 = 0;
 
 		if(model != nullptr)
 		{
 			if(request == etFeedback_State)
 			{
 				feedback.bytes[0] = (u8)model->state;
+				if(bLog)
+				{
+					LOGF("Send State: ");
+					LOGLN(feedback.bytes[0]);
+				}
 			}
-			if(request == etFeedback_Angles)
+			else if(request == etFeedback_Angles)
 			{
 				Vector3FToVector3FP16(model->status.angle, feedback.v3f16);
 			}
@@ -431,7 +463,16 @@ class Synchronizer
 			{
 				u8 index = receive.config_package.get.index;
 				PIDController &pid = model->GetPID(index);
-				Vector3FToVector3FP16(*(Vector3F *)&pid.kp, feedback.v3f16);
+				feedback.u8 = index;
+				feedback.s16s[0] = (s16)(pid.kp * 1000);
+				feedback.s16s[1] = (s16)(pid.ki * 1000);
+				feedback.s16s[2] = (s16)(pid.kd * 1000);
+				if(bLog)
+				{
+					LOGF("Send PID[");
+					LOG(index);
+					LOGF("]\n");
+				}
 			}
 			else if(request == etFeedback_Battery)
 			{
@@ -473,13 +514,12 @@ class Synchronizer
 		}
 
 
-
 		bool result = radio.write(&feedback, BUFFER_SIZE);
 		u32 t_end = micros();
 
 		if(bLog)
 		{
-			LOGF("\nSend feedback: ");
+			LOGF("Send feedback: ");
 			if(result) { LOGF("Successed  "); }
 			else { LOGF("Failed  "); }
 
@@ -526,6 +566,18 @@ class Synchronizer
 	}
 
 
+	void Connect(Model &model)
+	{
+		//接收到启动令牌才能继续运行
+		while(!connected)
+		{
+			//接收处理主机的配置命令
+			Sync(model);
+		}
+	}
+
+
+
 
 	//查询并处理从主机获取到的数据
 	void Sync(Model &model)
@@ -536,6 +588,13 @@ class Synchronizer
 			if(ptype == etPackage_Control)
 			{
 				model.SetInput(receive.control_package.command);
+
+				if(bLog)
+				{
+					LOGF("Set Control:");
+					LOGLN(receive.control_package.command.throttle);
+					//LOG(receive.control_package.command.throttle);
+				}
 
 				//直接发送
 				//auto fb = (RequestFeedbackType)receive.control_package.request;

@@ -193,6 +193,46 @@ void Model::SetPIDParameter(u8 index, u8 id, fp32 value_fp32)
 	}
 }
 
+//设定某个PID的某个参数
+void Model::SetPIDParameter(u8 index, s16 kp, s16 ki, s16 kd)
+{
+	PIDController &tpid = GetPID(index);
+	tpid.kp = kp / 1000.0f;
+	tpid.ki = ki / 1000.0f;
+	tpid.kd = kd / 1000.0f;
+	//tpid.error_integration = value;
+
+	LOGF("Set PID[");
+	LOG(index);
+	LOGF("] p:");
+	LOG(tpid.kp);
+	LOGF(" i:");
+	LOG(tpid.ki);
+	LOGF(" d:");
+	LOGLN(tpid.kd);
+	Beeper::Beep(0b101011, 6);
+}
+
+void Model::ConfigPID(u8 index, byte u8)
+{
+	if(index == 0xFF)
+	{
+		// 清除全部PID积分
+		for(int i = 0; i < 8; i++) GetPID(i).error_integration = 0;
+
+		LOGF("Clear interation of all pids.\n");
+		Beeper::Beep(0b101111, 6);
+	}
+	else
+	{
+		GetPID(index).error_integration = 0;
+		LOGF("Clear interation of pid[");
+		LOG(index);
+		LOGF("]\n");
+		Beeper::Beep(0b110111, 6);
+	}
+}
+
 //----------------------//
 
 void Model::Calibrate()

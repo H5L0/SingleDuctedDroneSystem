@@ -138,7 +138,7 @@ void setup()
 
 	LOGF("Waiting for command...");
 
-	synch.Connect();
+	synch.Connect(model);
 }
 
 

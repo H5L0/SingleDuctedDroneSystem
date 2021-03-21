@@ -68,6 +68,8 @@ void Storage::LoadBytes(void *to, const void *from, u8 size)
 
 bool Storage::UpdateFlags(u8 cm_flags, u8 pid_flags)
 {
+	if(cm_flags == 0 && pid_flags == 0) return true;
+
 	StorageInfoStruct info;
 	LoadBytes(&info, EADDR_INFO, ESIZE_INFO);
 
@@ -90,7 +92,7 @@ bool Storage::ClearFlags(u8 cm_flags, u8 pid_flags)
 
 	StoreBytes(&info, EADDR_INFO, ESIZE_INFO);
 
-	LOGF("\nDelete Stored: ");
+	LOGF("Delete Stored: ");
 	LOG(cm_flags, BIN);
 	LOGF("  PID: ");
 	LOGLN(pid_flags, BIN);
@@ -124,7 +126,7 @@ void Storage::StoreParameter(Model &model, u8 id)
 	u8 size = tb_size[id];
 	StoreBytes(source, destination, size);
 
-	LOGF("\nStore parameters[");
+	LOGF("Store parameters[");
 	LOG(id);
 	LOGF("]\n");
 	Beeper::Beep(0b1101);
@@ -137,7 +139,7 @@ void Storage::LoadParameter(Model &model, u8 id)
 	u8 size = tb_size[id];
 	LoadBytes(destination, source, size);
 
-	LOGF("\nLoad parameters[");
+	LOGF("Load parameters[");
 	LOG(id);
 	LOGF("]\n");
 	Beeper::Beep(0b1001);
@@ -149,7 +151,7 @@ void Storage::ResetParameter(Model &model, u8 id)
 	byte *destination = (byte *)&model + tb_src_offset[id];
 	u8 size = tb_size[id];
 
-	LOGF("\nReset parameters[");
+	LOGF("Reset parameters[");
 	LOG(id);
 	LOGF("]: ");
 
@@ -184,6 +186,11 @@ bool Storage::StoreParameters(Model &model, u8 cm_flags)
 
 bool Storage::LoadParameters(Model &model, u8 cm_flags)
 {
+	u8 cm_es, pid_es;
+	DataExists(cm_es, pid_es);
+	cm_flags &= cm_es;
+	if(cm_flags == 0) return false;
+
 	for(u8 i = 0; i < 3; i++)
 	{
 		if(cm_flags & (1 << i))
@@ -210,11 +217,15 @@ bool Storage::ResetParameters(Model &model, u8 cm_flags)
 
 void Storage::StorePID(PIDController pid[8], u8 index)
 {
-	void *parameters = (void *)&(pid[index].kp);
-	void *address = (void *)((u16)EADDR_PID + index * ESIZE_PID_PART);
-	StoreBytes(parameters, address, ESIZE_PID_PART);
+	float values[3];
+	values[0] = pid[index].kp;
+	values[1] = pid[index].ki;
+	values[2] = pid[index].kd;
 
-	LOGF("\nStore PID[");
+	void *address = (void *)((u16)EADDR_PID + index * ESIZE_PID_PART);
+	StoreBytes(values, address, ESIZE_PID_PART);
+
+	LOGF("Store PID[");
 	LOG(index);
 	LOGF("]\n");
 	Beeper::Beep(0b100101, 6);
@@ -222,11 +233,14 @@ void Storage::StorePID(PIDController pid[8], u8 index)
 
 void Storage::LoadPID(PIDController pid[8], u8 index)
 {
-	void *parameters = (void *)&(pid[index].kp);
+	float values[3];
 	void *address = (void *)((u16)EADDR_PID + index * ESIZE_PID_PART);
-	LoadBytes(parameters, address, ESIZE_PID_PART);
+	LoadBytes(values , address, ESIZE_PID_PART);
+	pid[index].kp = values[0];
+	pid[index].ki = values[1];
+	pid[index].kd = values[2];
 
-	LOGF("\nLoad PID[");
+	LOGF("Load PID[");
 	LOG(index);
 	LOGF("]\n");
 	Beeper::Beep(0b110101, 6);
@@ -235,10 +249,10 @@ void Storage::LoadPID(PIDController pid[8], u8 index)
 void Storage::ResetPID(PIDController pid[8], u8 index)
 {
 	pid[index].kp = pgm_read_float(&g_pids[index][0]);
-	pid[index].kp = pgm_read_float(&g_pids[index][1]);
-	pid[index].kp = pgm_read_float(&g_pids[index][2]);
+	pid[index].ki = pgm_read_float(&g_pids[index][1]);
+	pid[index].kd = pgm_read_float(&g_pids[index][2]);
 
-	LOGF("\nReset PID[");
+	LOGF("Reset PID[");
 	LOG(index);
 	LOGF("]\n");
 	Beeper::Beep(0b10110101);
@@ -263,6 +277,12 @@ bool Storage::StorePIDs(PIDController pid[8], u8 pid_flags)
 
 bool Storage::LoadPIDs(PIDController pid[8], u8 pid_flags)
 {
+	u8 cm_es, pid_es;
+	DataExists(cm_es, pid_es);
+	pid_flags &= pid_es;
+
+	if(pid_flags == 0) return false;
+
 	for(u8 i = 0; i < 8; i++)
 	{
 		if(pid_flags & (1 << i))
