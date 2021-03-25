@@ -11,7 +11,6 @@
 void Beeper::Init()
 {
 	pinMode(PIN_BEEPER, OUTPUT);
-	Beep(0b11101101, 8, true);
 }
 
 

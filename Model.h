@@ -1,8 +1,6 @@
 #pragma once
 #include "HL.Types.h"
 #include "HL.Vectors.h"
-#include "HL.Types.h"
-#include "HL.Vectors.h"
 #include "HL.PID.h"
 #include "HL.Log.h"
 
@@ -10,7 +8,6 @@
 #include "Beeper.h"
 
 #include "Wire.h"
-//#include "SPI.h"
 #include "Servo.h"
 
 //#define USE_HL_MPU6050
@@ -172,6 +169,7 @@ class Model
 	}
 
 	bool Init();
+	bool Reset();
 
 	bool PowerOn();
 	bool PowerOff();
@@ -182,7 +180,7 @@ class Model
 
 	//-------------------------------- Configure --------------------------------//
 
-	void SetInput(ControlCommand command);
+	void SetInput(ControlCommand &command);
 	void SetLog(u8 logStatus, u8 logPids, u8 logRudders);
 
 	void SetActionAngle(u8 angle);

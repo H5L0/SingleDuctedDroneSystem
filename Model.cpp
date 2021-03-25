@@ -1,6 +1,5 @@
 #include "Model.h"
-
-
+#include "Storage.h"
 
 
 bool Model::InitMPU()
@@ -33,9 +32,7 @@ bool Model::Init()
 {
 	if(!InitMPU()) return false;
 
-	//设置必要的属性初始值
-	//Storage::ResetParameters(*this, 0b1111);
-	//Storage::ResetPIDs(&GetPID(0), 0xFF);
+	Reset();
 
 	//绑定控制设备
 	control.motor.attach(PIN_MOTOR, 1000, 2000);
@@ -57,6 +54,31 @@ bool Model::Init()
 }
 
 
+bool Model::Reset()
+{
+	//加载默认值
+	Storage::ResetParameters(*this, 0b111);
+	Storage::ResetPIDs(GetPIDs(), 0xFF);
+	//加载储存值
+	Storage::LoadParameters(*this, 0b111);
+	Storage::LoadPIDs(GetPIDs(), 0xFF);
+
+	/*
+	//设置参数初始值
+	u8 cm_flags;
+	u8 pid_flags;
+	//检索有无储存值
+	Storage::DataExists(cm_flags, pid_flags);
+	//加载储存值
+	Storage::LoadParameters(model, cm_flags);
+	Storage::LoadPIDs(model.GetPIDs(), pid_flags);
+	//加载默认值
+	Storage::ResetParameters(model, ~cm_flags);
+	Storage::ResetPIDs(model.GetPIDs(), ~pid_flags);
+	*/
+	return true;
+}
+
 
 bool Model::PowerOn()
 {
@@ -64,6 +86,7 @@ bool Model::PowerOn()
 	state = eState_LockMode;
 	SetControl(0, 0, 0, 0);
 	status.last_update_time = 0;
+	Beeper::Beep(0b11, 2);
 	return true;
 }
 
@@ -71,6 +94,7 @@ bool Model::PowerOff()
 {
 	if(state == eState_FlightMode) return false;
 	state = eState_PowerOff;
+	Beeper::Beep(0b1111, 4);
 	return true;
 }
 
@@ -80,6 +104,7 @@ bool Model::Unlock()
 	state = eState_SafeMode;
 	//校准
 	//Calibrate();
+	Beeper::Beep(0b1001, 4);
 	return true;
 }
 
@@ -89,6 +114,7 @@ bool Model::Lock()
 	if(state != eState_SafeMode) return false;
 	state = eState_LockMode;
 	SetControl(0, 0, 0, 0);
+	Beeper::Beep(0b1101);
 	return true;
 }
 
@@ -97,7 +123,9 @@ bool Model::Launch()
 	//只有处于安全模式下才能起飞
 	if(state != eState_SafeMode) return false;
 	state = eState_FlightMode;
+	//重置失去控制计时
 	status.lost_control_timer = 0;
+	Beeper::Beep(0b11010101);
 	return true;
 }
 
@@ -107,12 +135,13 @@ bool Model::TurnToSafeMode()
 	//只在飞行模式时才能直接进入安全模式
 	if(state != eState_FlightMode) return false;
 	state = eState_SafeMode;
+	Beeper::Beep(0b11001001);
 	return true;
 }
 
 //-------------------------------- Configure --------------------------------//
 
-void Model::SetInput(ControlCommand command)
+void Model::SetInput(ControlCommand &command)
 {
 	this->command = command;
 
@@ -253,13 +282,6 @@ void Model::Calibrate()
 	LOGF("Calibarate Finish...\n");
 	Beeper::Beep(0b10101101);
 }
-
-/*
-void Reset()
-{
-	//.....**.....
-}
-*/
 
 
 //----------------------//

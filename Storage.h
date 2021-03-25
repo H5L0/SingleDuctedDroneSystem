@@ -2,8 +2,6 @@
 #include "HL.Types.h"
 #include "Model.h"
 
-//#include "EEPROM.h"
-#include "avr/eeprom.h"
 
 //-------------------------------------- EEPROM ------------------------------------//
 
@@ -75,11 +73,11 @@ class Storage
 	static void LoadBytes(void *to, const void *from, u8 size);
 
 	public:
-	static bool UpdateFlags(u8 cm_flags, u8 pid_flags);
+	static void UpdateFlags(u8 cm_flags, u8 pid_flags);
 
-	static bool ClearFlags(u8 cm_flags, u8 pid_flags);
+	static void ClearFlags(u8 cm_flags, u8 pid_flags);
 
-	static void DataExists(u8 &ptr_cm_flags, u8 &ptr_pid_flags);
+	static bool DataExists(u8 &ptr_cm_flags, u8 &ptr_pid_flags);
 
 	static void StoreParameter(Model &model, u8 id);
 
@@ -88,11 +86,11 @@ class Storage
 	static void ResetParameter(Model &model, u8 id);
 
 
-	static bool StoreParameters(Model &model, u8 cm_flags);
+	static void StoreParameters(Model &model, u8 cm_flags);
 
-	static bool LoadParameters(Model &model, u8 cm_flags);
+	static u8 LoadParameters(Model &model, u8 cm_flags);
 
-	static bool ResetParameters(Model &model, u8 cm_flags);
+	static void ResetParameters(Model &model, u8 cm_flags);
 
 
 	static void StorePID(PIDController pid[8], u8 index);
@@ -102,11 +100,11 @@ class Storage
 	static void ResetPID(PIDController pid[8], u8 index);
 
 
-	static bool StorePIDs(PIDController pid[8], u8 pid_flags);
+	static void StorePIDs(PIDController pid[8], u8 pid_flags);
 
-	static bool LoadPIDs(PIDController pid[8], u8 pid_flags);
+	static u8 LoadPIDs(PIDController pid[8], u8 pid_flags);
 
-	static bool ResetPIDs(PIDController pid[8], u8 pid_flags);
+	static void ResetPIDs(PIDController pid[8], u8 pid_flags);
 
 	
 

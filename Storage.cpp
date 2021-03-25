@@ -1,5 +1,7 @@
 #include "Storage.h"
 //#include "Model.h"
+//#include "EEPROM.h"
+#include "avr/eeprom.h"
 #include "avr/pgmspace.h"
 
 //--------- const default parameters ----------//
@@ -66,9 +68,9 @@ void Storage::LoadBytes(void *to, const void *from, u8 size)
 	//return true;
 }
 
-bool Storage::UpdateFlags(u8 cm_flags, u8 pid_flags)
+void Storage::UpdateFlags(u8 cm_flags, u8 pid_flags)
 {
-	if(cm_flags == 0 && pid_flags == 0) return true;
+	if(cm_flags == 0 && pid_flags == 0) return;
 
 	StorageInfoStruct info;
 	LoadBytes(&info, EADDR_INFO, ESIZE_INFO);
@@ -78,10 +80,9 @@ bool Storage::UpdateFlags(u8 cm_flags, u8 pid_flags)
 	info.pid_flags |= pid_flags;
 
 	StoreBytes(&info, EADDR_INFO, ESIZE_INFO);
-	return true;
 }
 
-bool Storage::ClearFlags(u8 cm_flags, u8 pid_flags)
+void Storage::ClearFlags(u8 cm_flags, u8 pid_flags)
 {
 	StorageInfoStruct info;
 	LoadBytes(&info, EADDR_INFO, ESIZE_INFO);
@@ -97,11 +98,10 @@ bool Storage::ClearFlags(u8 cm_flags, u8 pid_flags)
 	LOGF("  PID: ");
 	LOGLN(pid_flags, BIN);
 	Beeper::Beep(0b11110101);
-	return true;
 }
 
 
-void Storage::DataExists(u8 &ptr_cm_flags, u8 &ptr_pid_flags)
+bool Storage::DataExists(u8 &ptr_cm_flags, u8 &ptr_pid_flags)
 {
 	StorageInfoStruct info;
 	LoadBytes(&info, EADDR_INFO, ESIZE_INFO);
@@ -110,11 +110,13 @@ void Storage::DataExists(u8 &ptr_cm_flags, u8 &ptr_pid_flags)
 	{
 		ptr_cm_flags = 0;
 		ptr_pid_flags = 0;
+		return false;
 	}
 	else
 	{
 		ptr_cm_flags = info.cm_flags;
 		ptr_pid_flags = info.pid_flags;
+		return true;
 	}
 }
 
@@ -170,7 +172,7 @@ void Storage::ResetParameter(Model &model, u8 id)
 }
 
 
-bool Storage::StoreParameters(Model &model, u8 cm_flags)
+void Storage::StoreParameters(Model &model, u8 cm_flags)
 {
 	for(u8 i = 0; i < 3; i++)
 	{
@@ -181,15 +183,14 @@ bool Storage::StoreParameters(Model &model, u8 cm_flags)
 	}
 
 	UpdateFlags(cm_flags, 0);
-	return true;
 }
 
-bool Storage::LoadParameters(Model &model, u8 cm_flags)
+u8 Storage::LoadParameters(Model &model, u8 cm_flags)
 {
 	u8 cm_es, pid_es;
 	DataExists(cm_es, pid_es);
 	cm_flags &= cm_es;
-	if(cm_flags == 0) return false;
+	if(cm_flags == 0) return 0x00;
 
 	for(u8 i = 0; i < 3; i++)
 	{
@@ -198,10 +199,10 @@ bool Storage::LoadParameters(Model &model, u8 cm_flags)
 			LoadParameter(model, i);
 		}
 	}
-	return true;
+	return cm_flags;
 }
 
-bool Storage::ResetParameters(Model &model, u8 cm_flags)
+void Storage::ResetParameters(Model &model, u8 cm_flags)
 {
 	for(u8 i = 0; i < 3; i++)
 	{
@@ -210,7 +211,6 @@ bool Storage::ResetParameters(Model &model, u8 cm_flags)
 			ResetParameter(model, i);
 		}
 	}
-	return true;
 }
 
 
@@ -259,7 +259,7 @@ void Storage::ResetPID(PIDController pid[8], u8 index)
 }
 
 
-bool Storage::StorePIDs(PIDController pid[8], u8 pid_flags)
+void Storage::StorePIDs(PIDController pid[8], u8 pid_flags)
 {
 	for(u8 i = 0; i < 8; i++)
 	{
@@ -272,16 +272,14 @@ bool Storage::StorePIDs(PIDController pid[8], u8 pid_flags)
 	UpdateFlags(0, pid_flags);
 
 	//Beeper::Beep(0b11000101);
-	return true;
 }
 
-bool Storage::LoadPIDs(PIDController pid[8], u8 pid_flags)
+u8 Storage::LoadPIDs(PIDController pid[8], u8 pid_flags)
 {
 	u8 cm_es, pid_es;
 	DataExists(cm_es, pid_es);
 	pid_flags &= pid_es;
-
-	if(pid_flags == 0) return false;
+	if(pid_flags == 0) return 0x00;
 
 	for(u8 i = 0; i < 8; i++)
 	{
@@ -292,10 +290,10 @@ bool Storage::LoadPIDs(PIDController pid[8], u8 pid_flags)
 	}
 
 	//Beeper::Beep(0b01000101);
-	return true;
+	return pid_flags;
 }
 
-bool Storage::ResetPIDs(PIDController pid[8], u8 pid_flags)
+void Storage::ResetPIDs(PIDController pid[8], u8 pid_flags)
 {
 	for(u8 i = 0; i < 8; i++)
 	{
@@ -304,7 +302,6 @@ bool Storage::ResetPIDs(PIDController pid[8], u8 pid_flags)
 			ResetPID(pid, i);
 		}
 	}
-	return true;
 }
 
 

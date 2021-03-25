@@ -252,7 +252,6 @@ class Synchronizer
 	{
 		LOGF("Initial RF24/Transimiter: ");
 
-		// initialize the transceiver on the SPI bus
 		if(!radio.begin())
 		{
 			LOGF("Failed\n");
@@ -269,20 +268,16 @@ class Synchronizer
 		//radio.setRetries(0, 0);
 		radio.setChannel(102);
 
-		// Set the PA Level low to try preventing power supply related problems
-		// because these examples are likely run with nodes in close proximity to
-		// each other.
-		//radio.setPALevel(RF24_PA_MAX); // RF24_PA_MAX is default.
+		// RF24_PA_MAX is default.
+		//radio.setPALevel(RF24_PA_MAX);
 
-		// save on transmission time by setting the radio to only transmit the
-		// number of bytes we need to transmit a float
 		radio.setPayloadSize(BUFFER_SIZE);
 
 		// set the TX address of the RX node into the TX pipe
-		radio.openWritingPipe(address[1]); // always uses pipe 0
+		radio.openWritingPipe(address[1]);
 
 		// set the RX address of the TX node into a RX pipe
-		radio.openReadingPipe(1, address[0]); // using pipe 1
+		radio.openReadingPipe(1, address[0]);
 
 		//#=>发送模式
 		radio.startListening();
@@ -293,34 +288,27 @@ class Synchronizer
 
 
 
+	void Connect(Model &model)
+	{
+		connected = true;
+	}
+
+	void Disconnect(Model &model)
+	{
+		connected = false;
+		SetState(model, etStateToken_PowerOff);
+	}
+
+
 	//设定无人机状态机
 	void SetState(Model &model, StateTransferToken token)
 	{
-		if(token == etStateToken_PowerOn)
-		{
-			if(model.PowerOn()) Beeper::Beep(0b11, 2);
-		}
-		else if(token == etStateToken_PowerOff)
-		{
-			if(model.PowerOff()) Beeper::Beep(0b1111, 4);
-		}
-		else if(token == etStateToken_Lock)
-		{
-			if(model.Lock()) Beeper::Beep(0b1001);
-		}
-		else if(token == etStateToken_Unlock)
-		{
-			if(model.Unlock()) Beeper::Beep(0b0101);
-		}
-		else if(token == etStateToken_Launch)
-		{
-			if(model.Launch()) Beeper::Beep(0b11010101);
-		}
-		else if(token == etStateToken_SafeMode)
-		{
-			if(model.TurnToSafeMode()) Beeper::Beep(0b11001001);
-		}
-
+		if(token == etStateToken_PowerOn) model.PowerOn();
+		else if(token == etStateToken_PowerOff) model.PowerOff();
+		else if(token == etStateToken_Lock) model.Lock();
+		else if(token == etStateToken_Unlock) model.Unlock();
+		else if(token == etStateToken_Launch) model.Launch();
+		else if(token == etStateToken_SafeMode) model.TurnToSafeMode();
 	}
 
 
@@ -347,14 +335,10 @@ class Synchronizer
 		switch(config.command)
 		{
 			//System
-		case etConfig_Hello:       connected = true;                      return etFeedback_Ack;
-		case etConfig_ByeBye:
-		{
-			connected = false;
-			SetState(model, etStateToken_PowerOff);
-			return etFeedback_Ack;
-		}
+		case etConfig_Hello:       Connect(model);                        return etFeedback_Ack;
+		case etConfig_ByeBye:      Disconnect(model);                     return etFeedback_Ack;
 		case etConfig_Get:         return (RequestFeedbackType)config.get.target; //返回发送目标
+
 			//Config
 		case etConfig_StateToken:  SetState(model, (StateTransferToken)config.value_u8); return etFeedback_Ack;
 		case etConfig_ActionAngle: model.SetActionAngle(config.value_u8); return etFeedback_Ack;
@@ -365,6 +349,7 @@ class Synchronizer
 		case etConfig_RudderBias:
 			model.SetRudderCenter(config.rudder_center.index, config.rudder_center.value); return etFeedback_Ack;
 		case etConfig_RudderRatio: model.SetRudderAngle(config.value_u8); return etFeedback_Ack;
+
 			//PID
 		case etConfig_EnablePID:   model.config.use_PID = true;           return etFeedback_Ack;
 		case etConfig_DisablePID:  model.config.use_PID = false;          return etFeedback_Ack;
@@ -374,22 +359,33 @@ class Synchronizer
 		//case etConfig_SetPID:
 			//model.SetPIDParameter(config.pid.index, config.pid.id, config.pid.value); return etFeedback_Ack;
 
-			//Store
+			//Storage
 		case etConfig_Store:
-			return ((config.store.cm_flags && !Storage::StoreParameters(model, config.store.cm_flags))
-				| (config.store.pid_flags && !Storage::StorePIDs(model.GetPIDs(), config.store.pid_flags)))
-				? etFeedback_Fail : etFeedback_Ack;
+		{
+			if(config.store.cm_flags) Storage::StoreParameters(model, config.store.cm_flags);
+			if(config.store.pid_flags) Storage::StorePIDs(model.GetPIDs(), config.store.pid_flags);
+			return etFeedback_Ack;
+		}
 		case etConfig_Load:
-			return ((config.store.cm_flags && !Storage::LoadParameters(model, config.store.cm_flags))
-				| (config.store.pid_flags && !Storage::LoadPIDs(model.GetPIDs(), config.store.pid_flags)))
-				? etFeedback_Fail : etFeedback_Ack;
+		{
+			u8 fcm = config.store.cm_flags;
+			u8 fpid = config.store.pid_flags;
+			return (fcm && Storage::LoadParameters(model, fcm) != fcm)
+				|| (fpid && Storage::LoadPIDs(model.GetPIDs(), fpid) != fpid)
+					? etFeedback_Fail : etFeedback_Ack;
+		}
 		case etConfig_Reset:
-			return ((config.store.cm_flags && !Storage::ResetParameters(model, config.store.cm_flags))
-				| (config.store.pid_flags && !Storage::ResetPIDs(model.GetPIDs(), config.store.pid_flags)))
-				? etFeedback_Fail : etFeedback_Ack;
+		{
+			if(config.store.cm_flags) Storage::ResetParameters(model, config.store.cm_flags);
+			if(config.store.pid_flags) Storage::ResetPIDs(model.GetPIDs(), config.store.pid_flags);
+			return etFeedback_Ack;
+		}
 		case etConfig_Delete:
-			return Storage::ClearFlags(config.store.cm_flags, config.store.pid_flags)
-				? etFeedback_Ack : etFeedback_Fail;
+		{
+			Storage::ClearFlags(config.store.cm_flags, config.store.pid_flags);
+			return etFeedback_Ack;
+		}
+
 			//Log
 		case etConfig_Log:
 		{
@@ -541,6 +537,7 @@ class Synchronizer
 
 
 	public:
+	/*
 	void Connect()
 	{
 		//接收到启动令牌才能继续运行
@@ -564,9 +561,9 @@ class Synchronizer
 			}
 		}
 	}
+	*/
 
-
-	void Connect(Model &model)
+	void WaitConnect(Model &model)
 	{
 		//接收到启动令牌才能继续运行
 		while(!connected)
@@ -589,12 +586,13 @@ class Synchronizer
 			{
 				model.SetInput(receive.control_package.command);
 
+				/*
 				if(bLog)
 				{
 					LOGF("Set Control:");
 					LOGLN(receive.control_package.command.throttle);
-					//LOG(receive.control_package.command.throttle);
 				}
+				*/
 
 				//直接发送
 				//auto fb = (RequestFeedbackType)receive.control_package.request;
