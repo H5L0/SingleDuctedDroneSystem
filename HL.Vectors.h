@@ -1,12 +1,26 @@
 #pragma once
 #include "HL.Types.h"
 
+/*
 struct Vector3F
 {
 	float x;
 	float y;
 	float z;
 };
+*/
+
+union Vector3F
+{
+	struct
+	{
+		float x;
+		float y;
+		float z;
+	};
+	float values[3];
+};
+
 
 struct Vector3FP16
 {

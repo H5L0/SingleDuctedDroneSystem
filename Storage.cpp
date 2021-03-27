@@ -7,7 +7,7 @@
 //--------- const default parameters ----------//
 
 // 无人机配置参数
-PROGMEM const Model::ConfigStruct g_config = { 16, true, true };
+PROGMEM const Model::ConfigStruct g_config = { 8, 8, 8, true, { true, true, false } };
 
 PROGMEM const Model::LogStruct g_log = { 0b0000, 0b000, false };
 
@@ -15,8 +15,8 @@ PROGMEM const Model::LogStruct g_log = { 0b0000, 0b000, false };
 //无人机初始属性 (可以设为static的量)
 PROGMEM const Model::PropertyStruct g_property =
 {
-	{ 1000, 1000 }, 
-	{ { 1500, 1500, 1500, 1500 }, 16 } 
+	{ 1000, 1000 },
+	{ { 1500, 1500, 1500, 1500 }, 16 }
 };
 
 //96B
@@ -235,7 +235,7 @@ void Storage::LoadPID(PIDController pid[8], u8 index)
 {
 	float values[3];
 	void *address = (void *)((u16)EADDR_PID + index * ESIZE_PID_PART);
-	LoadBytes(values , address, ESIZE_PID_PART);
+	LoadBytes(values, address, ESIZE_PID_PART);
 	pid[index].kp = values[0];
 	pid[index].ki = values[1];
 	pid[index].kd = values[2];

@@ -40,8 +40,9 @@ class Synchronizer
 
 		etConfig_EnablePID = 0x41,
 		etConfig_DisablePID = 0x42,
-		etConfig_EnableCascade = 0x45,
-		etConfig_DisableCascade = 0x46,
+		etConfig_SetCascade = 0x45,
+		//etConfig_EnableCascade = 0x45,
+		//etConfig_DisableCascade = 0x46,
 		etConfig_ConfigPID = 0x4A,
 
 		etConfig_SetPID = 0x50,  //设置PID的参数
@@ -77,6 +78,7 @@ class Synchronizer
 		etFeedback_AngularVelocity = 0x12,
 		etFeedback_Acceleration = 0x13,
 		etFeedback_Battery = 0x1A,
+		etFeedback_ReceiveCount = 0x1C,
 
 		etFeedback_ThrottleProperty = 0x21,
 		etFeedback_RuddersProperty = 0x22,
@@ -183,26 +185,20 @@ class Synchronizer
 	{
 		u8 request;
 		//u8 flag;
-		u8 u8;
+		u8 u8_flag;
 
 		union
 		{
 			byte bytes[6];
 			s16 s16s[3];
+			u16 u16s[3];
 			Vector3FP16 v3f16; //姿态角度/角速度/加速度
-
-			struct
-			{
-
-			}rudders;
 		};
-
-		//u8 battery_level;    //电池电位 [0V, 5V] => [0,255] (ADC的原始转换结果)
 	};
 
 
 
-	//buffer共用体, 用于储存从radio读取的数据
+	//buffer共用体, 储存从radio读取的数据
 	union
 	{
 		byte bytes[BUFFER_SIZE];
@@ -227,6 +223,8 @@ class Synchronizer
 	//是否输出调试信息
 	u8 bLog;
 
+	u16 receive_count;
+
 
 	//Model &model;
 
@@ -235,7 +233,8 @@ class Synchronizer
 		radio(PIN_RADIO_CE, PIN_RADIO_CS),
 		connected(false),
 		mFeedbackType(etFeedback_None),
-		bLog(0)
+		bLog(0),
+		receive_count(0)
 	{
 
 	}
@@ -337,27 +336,64 @@ class Synchronizer
 			//System
 		case etConfig_Hello:       Connect(model);                        return etFeedback_Ack;
 		case etConfig_ByeBye:      Disconnect(model);                     return etFeedback_Ack;
-		case etConfig_Get:         return (RequestFeedbackType)config.get.target; //返回发送目标
+		case etConfig_Get:
+		{
+			//返回发送目标
+			return (RequestFeedbackType)config.get.target;
+		}
 
 			//Config
-		case etConfig_StateToken:  SetState(model, (StateTransferToken)config.value_u8); return etFeedback_Ack;
-		case etConfig_ActionAngle: model.SetActionAngle(config.value_u8); return etFeedback_Ack;
-		case etConfig_Calibrate:   model.Calibrate();                     return etFeedback_Ack;
+		case etConfig_StateToken:
+		{
+			SetState(model, (StateTransferToken)config.value_u8);
+			return etFeedback_Ack;
+		}
+		case etConfig_ActionAngle:
+		{
+			model.SetActionAngle(config.bytes[0], config.bytes[1], config.bytes[2]);
+			return etFeedback_Ack;
+		}
+		case etConfig_Calibrate:
+		{
+			model.Calibrate();
+			return etFeedback_Ack;
+		}
+
 			//Property
 		case etConfig_Throttle:
-			model.SetThrottleProperty(config.throttle.start, config.throttle.range); return etFeedback_Ack;
+		{
+			model.SetThrottleProperty(config.throttle.start, config.throttle.range);
+			return etFeedback_Ack;
+		}
 		case etConfig_RudderBias:
-			model.SetRudderCenter(config.rudder_center.index, config.rudder_center.value); return etFeedback_Ack;
-		case etConfig_RudderRatio: model.SetRudderAngle(config.value_u8); return etFeedback_Ack;
+		{
+			model.SetRudderCenter(config.rudder_center.index, config.rudder_center.value);
+			return etFeedback_Ack;
+		}
+		case etConfig_RudderRatio:
+		{
+			model.SetRudderAngle(config.value_u8);
+			return etFeedback_Ack;
+		}
 
 			//PID
 		case etConfig_EnablePID:   model.config.use_PID = true;           return etFeedback_Ack;
 		case etConfig_DisablePID:  model.config.use_PID = false;          return etFeedback_Ack;
-		case etConfig_EnableCascade:   model.config.use_cascade = true;   return etFeedback_Ack;
-		case etConfig_DisableCascade:  model.config.use_cascade = false;  return etFeedback_Ack;
-		case etConfig_ConfigPID: model.ConfigPID(config.pid.index, 0);    return etFeedback_Ack;
+		case etConfig_SetCascade:
+		{
+			model.config.use_cascade.value = config.value_u8;
+			return etFeedback_Ack;
+		}
+		case etConfig_ConfigPID:
+		{
+			model.ConfigPID(config.pid.index, 0);
+			return etFeedback_Ack;
+		}
 		//case etConfig_SetPID:
-			//model.SetPIDParameter(config.pid.index, config.pid.id, config.pid.value); return etFeedback_Ack;
+		{
+			//model.SetPIDParameter(config.pid.index, config.pid.id, config.pid.value);
+			//return etFeedback_Ack;
+		}
 
 			//Storage
 		case etConfig_Store:
@@ -412,6 +448,8 @@ class Synchronizer
 				LOGF("\nReceive Data: 0b");
 				LOGLN(*(u8 *)&receive.head, BIN);
 			}
+			//增加接收计数
+			receive_count++;
 			return true;
 		}
 		else return false;
@@ -430,7 +468,7 @@ class Synchronizer
 		FeedbackPackage feedback;
 		//feedback.flag = 0b10101010;
 		feedback.request = (u8)request; //*Ack/Fail/Others
-		feedback.u8 = 0;
+		feedback.u8_flag = 0;
 
 		if(model != nullptr)
 		{
@@ -459,7 +497,7 @@ class Synchronizer
 			{
 				u8 index = receive.config_package.get.index;
 				PIDController &pid = model->GetPID(index);
-				feedback.u8 = index;
+				feedback.u8_flag = index;
 				feedback.s16s[0] = (s16)(pid.kp * 1000);
 				feedback.s16s[1] = (s16)(pid.ki * 1000);
 				feedback.s16s[2] = (s16)(pid.kd * 1000);
@@ -480,9 +518,11 @@ class Synchronizer
 			}
 			else if(request == etFeedback_Config)
 			{
-				feedback.bytes[0] = model->config.action_angle;
-				feedback.bytes[1] = model->config.use_PID;
-				feedback.bytes[2] = model->config.use_cascade;
+				feedback.bytes[0] = model->config.action_angle[0];
+				feedback.bytes[1] = model->config.action_angle[1];
+				feedback.bytes[2] = model->config.action_angle[2];
+				feedback.bytes[3] = model->config.use_PID;
+				feedback.bytes[4] = model->config.use_cascade.value;
 			}
 			else if(request == etFeedback_RuddersProperty)
 			{
@@ -502,6 +542,11 @@ class Synchronizer
 			else if(request == etFeedback_StoreInfo)
 			{
 				Storage::DataExists(feedback.bytes[0], feedback.bytes[1]);
+			}
+			else if(request == etFeedback_ReceiveCount)
+			{
+				feedback.u16s[0] = receive_count;
+				receive_count = 0;
 			}
 			else
 			{

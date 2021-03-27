@@ -159,9 +159,11 @@ void Model::SetLog(u8 logStatus, u8 logPids, u8 logRudders)
 }
 
 
-void Model::SetActionAngle(u8 angle)
+void Model::SetActionAngle(u8 angle_x, u8 angle_y, u8 angle_z)
 {
-	config.action_angle = angle;
+	config.action_angle[0] = angle_x;
+	config.action_angle[1] = angle_y;
+	config.action_angle[2] = angle_z;
 
 	Beeper::Beep(0b101, 3);
 }
@@ -436,7 +438,70 @@ void Model::UpdatePID()
 	const float dtime = status.delta_time;
 	const u8 avFactor = 32;  //32/64/100 影响角速度PID的量级
 
-	if(config.use_cascade)
+	float cmd_values[3] =
+	{
+		command.angle_x / 128.0f,
+		command.angle_y / 128.0f,
+		command.angle_z / 128.0f,
+	};
+
+	for(u8 i = 0; i < 3; ++i)
+	{
+		u8 flag = (1 << i);
+		u8 index_pid = (i + 1) * 2;
+		if(config.use_cascade.value & flag)
+		{
+			PIDController &pid1 = GetPID(index_pid + 0);
+			PIDController &pid2 = GetPID(index_pid + 1);
+
+			float target = cmd_values[i] * config.action_angle[i];
+			float ang = status.angle.values[i];
+			float vel = status.angular_velocity.values[i] / avFactor;
+
+			float out1 = pid1.Step(target, ang, dtime);
+			float out2 = pid2.Step(out1, vel, dtime);
+
+			//LOG
+			if(log.pid.value & flag)
+			{
+				LOGF("PID[");
+				LOG(i);
+				LOGF("]|O.R= ");
+				LOG(out1);
+				LOGF(" O.V= ");
+				LOG(out2);
+
+				LOGF(" R.I=");
+				LOG(pid1.error_integration);
+				LOGF(" V.I=");
+				LOGLN(pid2.error_integration);
+			}
+		}
+		else
+		{
+			PIDController &pid2 = GetPID(index_pid + 1);
+
+			float target = cmd_values[i] * config.action_angle[i] / avFactor;
+			float vel = status.angular_velocity.values[i] / avFactor;
+			float out2 = pid2.Step(target, vel, dtime);
+
+			//LOG
+			if(log.pid.value & flag)
+			{
+				LOGF("PID[");
+				LOG(i);
+				LOGF("]|O.V= ");
+				LOG(out2);
+				LOGF(" I=");
+				LOG(pid2.error_integration);
+			}
+		}
+	}
+
+	if(log.pid.value) LOGF("\n");
+
+	/*
+	if(config.use_cascade.x)
 	{
 		//RX -> VX
 		float target_rx = ((s16)(command.angle_x) * config.action_angle) / 128.0f;
@@ -445,24 +510,6 @@ void Model::UpdatePID()
 
 		float o_rx = pids.RX.Step(target_rx, rx, dtime);
 		float o_vx = pids.VX.Step(o_rx, vx, dtime);
-
-
-		//RY -> VY
-		float target_ry = ((s16)(command.angle_y) * config.action_angle) / 128.0f;
-		float ry = status.angle.y;
-		float vy = status.angular_velocity.y / avFactor;
-
-		float o_ry = pids.RY.Step(target_ry, ry, dtime);
-		float o_vy = pids.VY.Step(o_ry, vy, dtime);
-
-
-		//RZ -> VZ
-		float target_rz = ((s16)(command.angle_z) * config.action_angle) / 128.0f;
-		float rz = status.angle.z;
-		float vz = status.angular_velocity.z / avFactor;
-
-		float o_rz = pids.RZ.Step(target_rz, rz, dtime);
-		float o_vz = pids.VZ.Step(o_rz, vz, dtime);
 
 		//LOG
 		if(log.pid.x)
@@ -477,6 +524,34 @@ void Model::UpdatePID()
 			LOGF(" VX.I=");
 			LOGLN(pids.VX.error_integration);
 		}
+	}
+	else
+	{
+		//RX -> VX
+		float target_vx = ((s16)(command.angle_x) * config.action_angle) / (128.0f * avFactor);
+		float vx = status.angular_velocity.x / avFactor;
+		float o_vx = pids.VX.Step(target_vx, vx, dtime);
+
+		//LOG
+		if(log.pid.x)
+		{
+			LOGF(" |PID.VX= ");
+			LOG(o_vx);
+			LOGF(" I=");
+			LOG(pids.VX.error_integration);
+		}
+	}
+
+	if(config.use_cascade.y)
+	{
+		//RY -> VY
+		float target_ry = ((s16)(command.angle_y) * config.action_angle) / 128.0f;
+		float ry = status.angle.y;
+		float vy = status.angular_velocity.y / avFactor;
+
+		float o_ry = pids.RY.Step(target_ry, ry, dtime);
+		float o_vy = pids.VY.Step(o_ry, vy, dtime);
+
 		if(log.pid.y)
 		{
 			LOGF(" |PID.RY= ");
@@ -489,6 +564,35 @@ void Model::UpdatePID()
 			LOGF(" VY.I=");
 			LOGLN(pids.VY.error_integration);
 		}
+	}
+	else
+	{
+		//RY -> VY
+		float target_vy = ((s16)(command.angle_y) * config.action_angle) / (128.0f * avFactor);
+		float vy = status.angular_velocity.y / avFactor;
+		float o_vy = pids.VY.Step(target_vy, vy, dtime);
+
+
+		if(log.pid.y)
+		{
+			LOGF(" |PID.VY= ");
+			LOG(o_vy);
+			LOGF(" I=");
+			LOG(pids.VY.error_integration);
+		}
+	}
+
+
+	if(config.use_cascade.z)
+	{
+		//RZ -> VZ
+		float target_rz = ((s16)(command.angle_z) * config.action_angle_z) / 128.0f;
+		float rz = status.angle.z;
+		float vz = status.angular_velocity.z / avFactor;
+
+		float o_rz = pids.RZ.Step(target_rz, rz, dtime);
+		float o_vz = pids.VZ.Step(o_rz, vz, dtime);
+
 		if(log.pid.z)
 		{
 			LOGF(" |PID.RZ= ");
@@ -504,36 +608,11 @@ void Model::UpdatePID()
 	}
 	else
 	{
-		//RX -> VX
-		float target_vx = ((s16)(command.angle_x) * config.action_angle) / (128.0f * avFactor);
-		float vx = status.angular_velocity.x / avFactor;
-		float o_vx = pids.VX.Step(target_vx, vx, dtime);
-
-		//RY -> VY
-		float target_vy = ((s16)(command.angle_y) * config.action_angle) / (128.0f * avFactor);
-		float vy = status.angular_velocity.y / avFactor;
-		float o_vy = pids.VY.Step(target_vy, vy, dtime);
-
 		//RZ -> VZ
-		float target_vz = ((s16)(command.angle_z) * config.action_angle) / (128.0f * avFactor);
+		float target_vz = ((s16)(command.angle_z) * config.action_angle_z) / (128.0f * avFactor);
 		float vz = status.angular_velocity.z / avFactor;
 		float o_vz = pids.VZ.Step(target_vz, vz, dtime);
 
-		//LOG
-		if(log.pid.x)
-		{
-			LOGF(" |PID.VX= ");
-			LOG(o_vx);
-			LOGF(" I=");
-			LOG(pids.VX.error_integration);
-		}
-		if(log.pid.y)
-		{
-			LOGF(" |PID.VY= ");
-			LOG(o_vy);
-			LOGF(" I=");
-			LOG(pids.VY.error_integration);
-		}
 		if(log.pid.z)
 		{
 			LOGF(" |PID.VZ= ");
@@ -541,9 +620,9 @@ void Model::UpdatePID()
 			LOGF(" I=");
 			LOG(pids.VZ.error_integration);
 		}
-		if(log.pid.value) LOG("\n");
 	}
-
+	if(log.pid.value) LOGF("\n");
+	*/
 
 }
 

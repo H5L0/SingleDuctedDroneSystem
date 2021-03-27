@@ -46,11 +46,21 @@ class Model
 	// 无人机配置参数(可以动态变化的量)
 	struct ConfigStruct
 	{
-		u8 action_angle;      //姿态倾斜角幅度(deg)
+		u8 action_angle[3];   //姿态倾斜角幅度(deg)
+		//u8 action_angle_z;    //z轴动作角
 
 		bool use_PID;         //是否应用PID控制
-		bool use_cascade;     //是否应用串级(内外环)
-
+		union
+		{
+			struct
+			{
+				bool x : 1;
+				bool y : 1;
+				bool z : 1;
+			};
+			u8 value;
+		}use_cascade;         //是否应用串级(内外环)
+		
 	}config;
 
 
@@ -183,7 +193,7 @@ class Model
 	void SetInput(ControlCommand &command);
 	void SetLog(u8 logStatus, u8 logPids, u8 logRudders);
 
-	void SetActionAngle(u8 angle);
+	void SetActionAngle(u8 angle_x, u8 angle_y, u8 angle_z);
 	void SetThrottleProperty(u16 start, u16 range);
 	void SetRudderCenter(u8 index, u16 value);
 	void SetRudderAngle(u8 value);
