@@ -11,87 +11,92 @@
 
 #define BUFFER_SIZE 8
 
+
+//同步器
+//负责接收和发送数据
 class Synchronizer
 {
 
 	//-------------------------------- Command Enum --------------------------------//
 
+	//包体类型（2位）
 	enum PackageType
 	{
-		etPackage_None = 0b00,
+		etPackage_None    = 0b00,
 		etPackage_Control = 0b01,
-		etPackage_Config = 0b10,
+		etPackage_Config  = 0b10,
 		etPackage_Unknown = 0b11,
 	};
 
+	//配置命令
 	enum ConfigCommandType
 	{
-		etConfig_Hello = 0x01,
-		etConfig_ByeBye = 0x02,
-		etConfig_Get = 0x03,  //获取参数
+		etConfig_Hello       = 0x01,
+		etConfig_ByeBye      = 0x02,
+		etConfig_Get         = 0x03,  //获取参数
 
-		etConfig_StateToken = 0x05,  //无人机状态转移符
+		etConfig_StateToken  = 0x05,  //无人机状态转移符
 		etConfig_ActionAngle = 0x08,  //控制角度幅度
-		etConfig_Calibrate = 0x0A,  //以当前姿态为基准校正MPU偏移
+		etConfig_Calibrate   = 0x0A,  //以当前姿态为基准校正MPU偏移
 
-		etConfig_Throttle = 0x11,  //油门最大/最小/开始值
-		etConfig_RudderBias = 0x21,
+		etConfig_Throttle    = 0x11,  //油门最大/最小/开始值
+		etConfig_RudderBias  = 0x21,
 		etConfig_RudderRatio = 0x22,
 
-		etConfig_EnablePID = 0x41,
-		etConfig_DisablePID = 0x42,
-		etConfig_SetCascade = 0x45,
-		//etConfig_EnableCascade = 0x45,
+		etConfig_EnablePID   = 0x41,
+		etConfig_DisablePID  = 0x42,
+		etConfig_SetCascade  = 0x45,
+		//etConfig_EnableCascade  = 0x45,
 		//etConfig_DisableCascade = 0x46,
-		etConfig_ConfigPID = 0x4A,
+		etConfig_ConfigPID   = 0x4A,
 
-		etConfig_SetPID = 0x50,  //设置PID的参数
-		etConfig_SetPID_1 = 0x51,
+		etConfig_SetPID      = 0x50,  //设置PID的参数
+		etConfig_SetPID_1    = 0x51,
 		//etConfig_ZeroPID   = 0x52,  //清空PID的积分
-		//etConfig_StorePID = 0x5A,
-		//etConfig_LoadPID = 0x5B,
-		//etConfig_ResetPID = 0x5E,
+		//etConfig_StorePID  = 0x5A,
+		//etConfig_LoadPID   = 0x5B,
+		//etConfig_ResetPID  = 0x5E,
 		//etConfig_DeletePID = 0x5F,
 
-		etConfig_Store = 0x8A,  //储存某参数到EEPROM
-		etConfig_Load = 0x8B,  //从EEPROM读取数据
-		etConfig_Reset = 0x8E,  //重置所有参数
-		etConfig_Delete = 0x8F,  //清除储存到EEPROM的参数
+		etConfig_Store       = 0x8A,  //储存某参数到EEPROM
+		etConfig_Load        = 0x8B,  //从EEPROM读取数据
+		etConfig_Reset       = 0x8E,  //重置所有参数
+		etConfig_Delete      = 0x8F,  //清除储存到EEPROM的参数
 
-		etConfig_Log = 0xB1,  //控制打印的信息
+		etConfig_Log         = 0xB1,  //控制打印的信息
 
 	};
 
-
+	//回传数据类型
 	enum RequestFeedbackType
 	{
-		etFeedback_None = 0x00,
-		etFeedback_Ack = 0x01,
+		etFeedback_None   = 0x00,
+		etFeedback_Ack    = 0x01,
 
-		etFeedback_Fail = 0xFF,
-		etFeedback_Error = 0xFE,
-		etFeedback_UnknownPackageType = 0xFD,
+		etFeedback_Fail   = 0xFF,
+		etFeedback_Error  = 0xFE,
+		etFeedback_UnknownPackageType   = 0xFD,
 		etFeedback_UnknownConfigCommand = 0xFC,
 
-		etFeedback_State = 0x10,
-		etFeedback_Angles = 0x11,
-		etFeedback_AngularVelocity = 0x12,
-		etFeedback_Acceleration = 0x13,
-		etFeedback_Battery = 0x1A,
-		etFeedback_ReceiveCount = 0x1C,
+		etFeedback_State            = 0x10,
+		etFeedback_Angles           = 0x11,
+		etFeedback_AngularVelocity  = 0x12,
+		etFeedback_Acceleration     = 0x13,
+		etFeedback_Battery          = 0x1A,
+		etFeedback_ReceiveCount     = 0x1C,
 
 		etFeedback_ThrottleProperty = 0x21,
-		etFeedback_RuddersProperty = 0x22,
-		etFeedback_Config = 0x23,
-		etFeedback_LogSwitch = 0x24,
+		etFeedback_RuddersProperty  = 0x22,
+		etFeedback_Config           = 0x23,
+		etFeedback_LogSwitch        = 0x24,
 
-		etFeedback_PIDParameters = 0x31,
+		etFeedback_PIDParameters    = 0x31,
 
-		etFeedback_StoreInfo = 0x41,
+		etFeedback_StoreInfo        = 0x41,
 
-		etFeedback_RudderAngles = 0x61,
-		etFeedback_PIDOutput = 0x62,
-		etFeedback_TimeCycle = 0x6A,
+		etFeedback_RudderAngles     = 0x61,
+		etFeedback_PIDOutput        = 0x62,
+		etFeedback_TimeCycle        = 0x6A,
 	};
 
 
@@ -103,13 +108,13 @@ class Synchronizer
 	//        \-------------/------------/ 0x88 PowerOff
 	enum StateTransferToken
 	{
-		etStateToken_PowerOn = 0x01, //? => 锁定模式
+		etStateToken_PowerOn  = 0x01, //? => 锁定模式
 		etStateToken_PowerOff = 0x88, //锁定模式/安全模式 => 
 
-		etStateToken_Lock = 0xF0,   //安全模式 => 锁定模式
-		etStateToken_Unlock = 0xFA,   //锁定模式 => 安全模式
+		etStateToken_Lock     = 0xF0, //安全模式 => 锁定模式
+		etStateToken_Unlock   = 0xFA, //锁定模式 => 安全模式
 
-		etStateToken_Launch = 0x11, //安全模式 => 飞行模式
+		etStateToken_Launch   = 0x11, //安全模式 => 飞行模式
 		etStateToken_SafeMode = 0xFE, //飞行模式 => 安全模式
 	};
 

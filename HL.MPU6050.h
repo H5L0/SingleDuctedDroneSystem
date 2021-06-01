@@ -1,14 +1,16 @@
+//#
+//# HL.MPU6050库, 基于MPU6050_light库修改而成
+//# 用于读取MPU6050传感器的角速度和加速度值, 通过一阶线性互补滤波获得姿态角
+//# 
 #pragma once
-//#define USE_HL_MPU6050
-#ifdef USE_HL_MPU6050
-
 #include "Arduino.h"
 #include "Wire.h"
 
 #include "HL.Types.h"
 #include "HL.Vectors.h"
 
-#define MPU6050_ADDR                  0x68
+
+#define MPU6050_ADDR             0x68
 #define MPU6050_REG_SMPLRT_DIV   0x19
 #define MPU6050_REG_CONFIG       0x1a
 #define MPU6050_REG_GYRO_CONFIG  0x1b
@@ -18,13 +20,31 @@
 #define MPU6050_REG_ACCEL_OUT    0x3B
 #define MPU6050_REG_GYRO_OUT     0x43
 
-#define RAD_2_DEG             57.29578 // [��/rad]
-#define CALIB_OFFSET_NB_MES   500
-#define TEMP_LSB_2_DEGREE     340.0    // [bit/celsius]
-#define TEMP_LSB_OFFSET       12412.0
+#define RAD_2_DEG                57.29578 // [°/rad]
+//#define TEMP_LSB_2_DEGREE        340.0    // [bit/celsius]
+//#define TEMP_LSB_OFFSET          12412.0
 
-#define DEFAULT_GYRO_COEFF    0.98
+#define MPU6050_CALIB_COUNT      512
+#define MPU6050_GYRO_COEFF       0.99
 
+
+#define MPU6050_AXIS_X  1
+#define MPU6050_AXIS_Y  2
+#define MPU6050_AXIS_Z  3
+
+
+//===================================================//
+//无人机的坐标系定义
+#define DRONE_X      DRONE_LEFT  //X轴为无人机右方
+#define DRONE_Y      DRONE_FRONT //Y轴为无人机前方
+#define DRONE_Z      DRONE_UP    //Z轴为无人机上方
+
+//无人机方向对应的MPU轴向
+//(*) 请根据MPU的安装方向更改
+#define DRONE_LEFT   +MPU6050_AXIS_X
+#define DRONE_FRONT  +MPU6050_AXIS_Y
+#define DRONE_UP     +MPU6050_AXIS_Z
+//===================================================//
 
 
 class MPU6050
@@ -36,58 +56,58 @@ class MPU6050
 
 	void Calibrate();
 
-	void Update(u16 delta_time_us);
+	void Update(float dtime);
 
 	void Reset() { angle.z = 0; }
 
 	fp16 GetTemperature() { return temperature; };
 
-	fp32 GetAccX() { return acc.x; };
-	fp32 GetAccY() { return acc.y; };
-	fp32 GetAccZ() { return acc.z; };
+	float GetAccX() { return acc.x; };
+	float GetAccY() { return acc.y; };
+	float GetAccZ() { return acc.z; };
 	
-	fp32 GetGyroX() { return gyro.x; };
-	fp32 GetGyroY() { return gyro.y; };
-	fp32 GetGyroZ() { return gyro.z; };
+	float GetGyroX() { return gyro.x; };
+	float GetGyroY() { return gyro.y; };
+	float GetGyroZ() { return gyro.z; };
 
-	fp32 GetAccAngleX() { return angle_acc_x; };
-	fp32 GetAccAngleY() { return angle_acc_y; };
+	float GetAccAngleX() { return acc_angle.x; };
+	float GetAccAngleY() { return acc_angle.y; };
 
-	fp32 GetAngleX() { return angle.x; };
-	fp32 GetAngleY() { return angle.y; };
-	fp32 GetAngleZ() { return angle.z; };
+	float GetAngleX() { return angle.x; };
+	float GetAngleY() { return angle.y; };
+	float GetAngleZ() { return angle.z; };
 
-	void GetAcceleration(Vector3FP32 &acc) { acc = this->acc; }
-	void GetAngularVelocity(Vector3FP32 &av) { av = this->gyro; }
-	void GetAngles(Vector3FP32 &angles) { angles = this->angle; }
+	void GetAcceleration(Vector3F &acc) { acc = this->acc; }
+	void GetAngularVelocity(Vector3F &av) { av = this->gyro; }
+	void GetAngles(Vector3F &angles) { angles = this->angle; }
+	void GetAccAngles(Vector3F &angles) { angles = this->angle; }
 
 
 	private:
+	//[ax, ay, az, temp, gx, gy, gz]
 	void FetchRawData(s16 raws[7]);
 
 	byte _Write(byte reg, byte data);
 	byte _Read(byte reg);
-	byte _ReadBytes(byte reg, byte *bytes, u8 count);
+	void _ReadBytes(byte reg, byte *bytes, u8 count);
 
 	TwoWire &wire;
 
 	// deg/s = (raw * 500) << shift
-	u8 gyro_degsec_shift_500;
+	//u8 gyro_degsec_shift_500;
 	// g = (raw * 4) << shift
-	u8 acc_g_shift_4;
+	//u8 acc_g_shift_4;
 
-	Vector3S16 gyro_offset;
-	Vector3S16 acc_offset;
+	//Vector3S16 gyro_offset;
+	//Vector3S16 acc_offset;
+	s16 offsets[6];
 
 	fp16 temperature;
-	Vector3FP32 acc;
-	Vector3FP32 gyro;
-	Vector3FP32 angle;
+	Vector3F acc;
+	Vector3F gyro;
+	Vector2F acc_angle;
+	Vector3F angle;
 
-	fp32 angle_acc_x;
-	fp32 angle_acc_y;
-
-	u8 filter_gyro_coefficient_shift; //���������Ŷ� ((1<<shift) - 1) / (1<<shift) (* = 6)
+public:
+	float filter_gyro_coefficient; //陀螺仪置信度
 };
-
-#endif

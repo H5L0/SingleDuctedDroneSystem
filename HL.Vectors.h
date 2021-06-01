@@ -60,3 +60,13 @@ struct Vector3S16
 };
 
 
+union Vector2F
+{
+	struct
+	{
+		float x;
+		float y;
+	};
+	float values[2];
+};
+

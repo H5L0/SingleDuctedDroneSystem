@@ -8,8 +8,11 @@ bool Model::InitMPU()
 
 #ifdef USE_HL_MPU6050
 	byte status = mpu.Begin();
+	mpu.filter_gyro_coefficient = 0.99f;
 #else
 	byte status = mpu.begin();
+	//(*)å°†é™€èºä»ªç³»æ•°è®¾å®šä¸º0.99
+	//mpu.setFilterGyroCoef(0.99f);
 #endif
 	LOGF("Status: ");
 	LOGLN(status);
@@ -17,7 +20,6 @@ bool Model::InitMPU()
 
 	LOGF("Calculating offsets, do not move MPU6050. ");
 	delay(255);
-
 #ifdef USE_HL_MPU6050
 	mpu.Calibrate();
 #else
@@ -34,20 +36,20 @@ bool Model::Init()
 
 	Reset();
 
-	//°ó¶¨¿ØÖÆÉè±¸
+	//ç»‘å®šæ§åˆ¶è®¾å¤‡
 	control.motor.attach(PIN_MOTOR, 1000, 2000);
-	control.servo[0].attach(PIN_SERVO_1, 1000, 2000);  //**×î´ó×îĞ¡Öµ´ı²âÊÔ
-	control.servo[1].attach(PIN_SERVO_2, 1000, 2000);  //**´ı²âÊÔ
-	control.servo[2].attach(PIN_SERVO_3, 1000, 2000);  //**´ı²âÊÔ
-	control.servo[3].attach(PIN_SERVO_4, 1000, 2000);  //**´ı²âÊÔ
+	control.servo[0].attach(PIN_SERVO_1, 1000, 2000);  //**æœ€å¤§æœ€å°å€¼å¾…æµ‹è¯•
+	control.servo[1].attach(PIN_SERVO_2, 1000, 2000);  //**å¾…æµ‹è¯•
+	control.servo[2].attach(PIN_SERVO_3, 1000, 2000);  //**å¾…æµ‹è¯•
+	control.servo[3].attach(PIN_SERVO_4, 1000, 2000);  //**å¾…æµ‹è¯•
 
-	//ÖØÖÃ¿ØÖÆ
+	//é‡ç½®æ§åˆ¶
 	SetControl(0, 0, 0, 0);
 
-	//Æô¶¯Ê±µçÔ´Ä¬ÈÏ¹Ø±Õ
+	//å¯åŠ¨æ—¶ç”µæºé»˜è®¤å…³é—­
 	state = eState_PowerOff;
 
-	//¸üĞÂÊ±¼ä, ±ÜÃâPID³ö´í
+	//æ›´æ–°æ—¶é—´, é¿å…PIDå‡ºé”™
 	status.last_update_time = 0;
 
 	return true;
@@ -56,23 +58,23 @@ bool Model::Init()
 
 bool Model::Reset()
 {
-	//¼ÓÔØÄ¬ÈÏÖµ
+	//åŠ è½½é»˜è®¤å€¼
 	Storage::ResetParameters(*this, 0b111);
 	Storage::ResetPIDs(GetPIDs(), 0xFF);
-	//¼ÓÔØ´¢´æÖµ
+	//åŠ è½½å‚¨å­˜å€¼
 	Storage::LoadParameters(*this, 0b111);
 	Storage::LoadPIDs(GetPIDs(), 0xFF);
 
 	/*
-	//ÉèÖÃ²ÎÊı³õÊ¼Öµ
+	//è®¾ç½®å‚æ•°åˆå§‹å€¼
 	u8 cm_flags;
 	u8 pid_flags;
-	//¼ìË÷ÓĞÎŞ´¢´æÖµ
+	//æ£€ç´¢æœ‰æ— å‚¨å­˜å€¼
 	Storage::DataExists(cm_flags, pid_flags);
-	//¼ÓÔØ´¢´æÖµ
+	//åŠ è½½å‚¨å­˜å€¼
 	Storage::LoadParameters(model, cm_flags);
 	Storage::LoadPIDs(model.GetPIDs(), pid_flags);
-	//¼ÓÔØÄ¬ÈÏÖµ
+	//åŠ è½½é»˜è®¤å€¼
 	Storage::ResetParameters(model, ~cm_flags);
 	Storage::ResetPIDs(model.GetPIDs(), ~pid_flags);
 	*/
@@ -102,7 +104,7 @@ bool Model::Unlock()
 {
 	if(state != eState_LockMode) return false;
 	state = eState_SafeMode;
-	//Ğ£×¼
+	//æ ¡å‡†
 	//Calibrate();
 	Beeper::Beep(0b1001, 4);
 	return true;
@@ -110,7 +112,7 @@ bool Model::Unlock()
 
 bool Model::Lock()
 {
-	//Ö»ÔÚ°²È«Ä£Ê½Ê±²Å½øÈëËø¶¨Ä£Ê½
+	//åªåœ¨å®‰å…¨æ¨¡å¼æ—¶æ‰è¿›å…¥é”å®šæ¨¡å¼
 	if(state != eState_SafeMode) return false;
 	state = eState_LockMode;
 	SetControl(0, 0, 0, 0);
@@ -120,10 +122,10 @@ bool Model::Lock()
 
 bool Model::Launch()
 {
-	//Ö»ÓĞ´¦ÓÚ°²È«Ä£Ê½ÏÂ²ÅÄÜÆğ·É
+	//åªæœ‰å¤„äºå®‰å…¨æ¨¡å¼ä¸‹æ‰èƒ½èµ·é£
 	if(state != eState_SafeMode) return false;
 	state = eState_FlightMode;
-	//ÖØÖÃÊ§È¥¿ØÖÆ¼ÆÊ±
+	//é‡ç½®å¤±å»æ§åˆ¶è®¡æ—¶
 	status.lost_control_timer = 0;
 	Beeper::Beep(0b11010101);
 	return true;
@@ -131,8 +133,8 @@ bool Model::Launch()
 
 bool Model::TurnToSafeMode()
 {
-	//**Ëø¶¨Ä£Ê½²»ÄÜÖ±½Ó×ªÈë°²È«Ä£Ê½(Ö»ÄÜÊ¹ÓÃUnlock)
-	//Ö»ÔÚ·ÉĞĞÄ£Ê½Ê±²ÅÄÜÖ±½Ó½øÈë°²È«Ä£Ê½
+	//**é”å®šæ¨¡å¼ä¸èƒ½ç›´æ¥è½¬å…¥å®‰å…¨æ¨¡å¼(åªèƒ½ä½¿ç”¨Unlock)
+	//åªåœ¨é£è¡Œæ¨¡å¼æ—¶æ‰èƒ½ç›´æ¥è¿›å…¥å®‰å…¨æ¨¡å¼
 	if(state != eState_FlightMode) return false;
 	state = eState_SafeMode;
 	Beeper::Beep(0b11001001);
@@ -145,7 +147,7 @@ void Model::SetInput(ControlCommand &command)
 {
 	this->command = command;
 
-	//ÖØÖÃÊ§È¥¿ØÖÆ¼ÆÊ±
+	//é‡ç½®å¤±å»æ§åˆ¶è®¡æ—¶
 	status.lost_control_timer = 0;
 }
 
@@ -172,7 +174,7 @@ void Model::SetThrottleProperty(u16 start, u16 range)
 {
 	//property.throttle.start = start;
 	//property.throttle.range = range;
-	//°²È«Æğ¼û, ²»Ê¹ÓÃ´«ÈëÖµ, ±ÜÃâÊ¹ÓÃ´ÓEEPROM¶ÁÈ¡µÄ´íÎóÊı¾İ
+	//å®‰å…¨èµ·è§, ä¸ä½¿ç”¨ä¼ å…¥å€¼, é¿å…ä½¿ç”¨ä»EEPROMè¯»å–çš„é”™è¯¯æ•°æ®
 	property.throttle.start = 1000;
 	property.throttle.range = 1000;
 
@@ -194,10 +196,10 @@ void Model::SetRudderAngle(u8 value)
 }
 
 
-//Éè¶¨Ä³¸öPIDµÄÄ³¸ö²ÎÊı
+//è®¾å®šæŸä¸ªPIDçš„æŸä¸ªå‚æ•°
 void Model::SetPIDParameter(u8 index, u8 id, fp32 value_fp32)
 {
-	// Çå³ıÈ«²¿PID»ı·Ö
+	// æ¸…é™¤å…¨éƒ¨PIDç§¯åˆ†
 	if(index == 0xFF && id == 9 && value_fp32 == 0)
 	{
 		for(int i = 0; i < 8; i++) GetPID(i).error_integration = 0;
@@ -224,7 +226,7 @@ void Model::SetPIDParameter(u8 index, u8 id, fp32 value_fp32)
 	}
 }
 
-//Éè¶¨Ä³¸öPIDµÄÄ³¸ö²ÎÊı
+//è®¾å®šæŸä¸ªPIDçš„æŸä¸ªå‚æ•°
 void Model::SetPIDParameter(u8 index, s16 kp, s16 ki, s16 kd)
 {
 	PIDController &tpid = GetPID(index);
@@ -248,7 +250,7 @@ void Model::ConfigPID(u8 index, byte u8)
 {
 	if(index == 0xFF)
 	{
-		// Çå³ıÈ«²¿PID»ı·Ö
+		// æ¸…é™¤å…¨éƒ¨PIDç§¯åˆ†
 		for(int i = 0; i < 8; i++) GetPID(i).error_integration = 0;
 
 		LOGF("Clear interation of all pids.\n");
@@ -299,14 +301,14 @@ void Model::SetServo(u8 index, float value)
 	if(value > 1) value = 1;
 	else if(value < -1) value = -1;
 
-	//¶Ô´óÆ«×ª¶æÆ¬×öĞ§ÂÊĞ£Õı 
-	//(*) x*((x*a)+1)»á³¬³ö[-1,1]·¶Î§
-	//    x*((x*a)+(1-a))²»»á
+	//å¯¹å¤§åè½¬èˆµç‰‡åšæ•ˆç‡æ ¡æ­£ 
+	//(*) x*((x*a)+1)ä¼šè¶…å‡º[-1,1]èŒƒå›´
+	//    x*((x*a)+(1-a))ä¸ä¼š
 	const float addi = 0.1f;
 	//if(value > 0) value = value * (1 + value * addi);
 	//else value = -value * (1 - value * addi);
 
-	//Ò»½×ÏßĞÔÂË²¨Æ½»¬
+	//ä¸€é˜¶çº¿æ€§æ»¤æ³¢å¹³æ»‘
 	const float cof = 0.875f;
 	float sValue = value * (1 - cof) + control.rudders[index] * cof;
 	control.rudders[index] = sValue;
@@ -331,14 +333,14 @@ void Model::SetControl(u16 throttle, float x, float y, float z)
 
 //----------------------------- Routine Function ------------------------------//
 
-//´Ó¸÷Éè±¸ÉÏ»ñÈ¡µ±Ç°ÎŞÈË»ú×´Ì¬
+//ä»å„è®¾å¤‡ä¸Šè·å–å½“å‰æ— äººæœºçŠ¶æ€
 void Model::UpdateStatus()
 {
-	//¸üĞÂÊ±¼ä
+	//æ›´æ–°æ—¶é—´
 	u32 t_now_us = micros();
-	//¼ä¸ôÊ±¼ä
+	//é—´éš”æ—¶é—´
 	u32 dt_us = t_now_us - status.last_update_time;
-	//³õÊ¼»¯Ê±¼ä
+	//åˆå§‹åŒ–æ—¶é—´
 	if(status.last_update_time == 0)
 	{
 		status.delta_time_1024 = 8;
@@ -348,33 +350,28 @@ void Model::UpdateStatus()
 	else
 	{
 		// dt_1024.1 = 1/1024s = 1000000us/1024 = 977us
-		u16 dt_1024 = dt_us / 977;  //(*) 64sÒç³ö
-		// dTimeÇ¯ÖÆµ½[1, 255]
+		u16 dt_1024 = dt_us / 977;  //(*) 64sæº¢å‡º
+		// dTimeé’³åˆ¶åˆ°[1, 255]
 		status.delta_time_1024 = dt_1024 > 255 ? 255 : dt_1024 == 0 ? 1 : dt_1024;
 		status.delta_time = dt_us / 1000000.0f;
 		status.last_update_time = t_now_us;
 		status.lost_control_timer += dt_1024;
 	}
 
+	u32 before_update_mpu_time = log.status.delta_time ? micros() : 0;
 #ifdef USE_HL_MPU6050
-	u32 before_update_mpu_time = micros();
-	mpu.Update(dtime_us);
-	u32 after_update_mpu_time = micros();
-
-	status.acceleration.x = -mpu.GetAccX();
-	status.acceleration.y = -mpu.GetAccY();
-	status.acceleration.z = -mpu.GetAccZ();
-	status.angle.x = -mpu.GetAngleX();
-	status.angle.y = -mpu.GetAngleY();
-	status.angle.z = -mpu.GetAngleZ();
-	status.angular_velocity.x = -mpu.GetGyroX();
-	status.angular_velocity.y = -mpu.GetGyroY();
-	status.angular_velocity.z = -mpu.GetGyroZ();
+	mpu.Update(status.delta_time);
+	status.acceleration.x = mpu.GetAccX();
+	status.acceleration.y = mpu.GetAccY();
+	status.acceleration.z = mpu.GetAccZ();
+	status.angle.x = mpu.GetAngleX();
+	status.angle.y = mpu.GetAngleY();
+	status.angle.z = mpu.GetAngleZ();
+	status.angular_velocity.x = mpu.GetGyroX();
+	status.angular_velocity.y = mpu.GetGyroY();
+	status.angular_velocity.z = mpu.GetGyroZ();
 #else
-	u32 before_update_mpu_time = micros();
 	mpu.update(status.delta_time);
-	u32 after_update_mpu_time = micros();
-
 	status.acceleration.x = -mpu.getAccX();
 	status.acceleration.y = -mpu.getAccY();
 	status.acceleration.z = -mpu.getAccZ();
@@ -385,6 +382,21 @@ void Model::UpdateStatus()
 	status.angular_velocity.y = -mpu.getGyroY();
 	status.angular_velocity.z = -mpu.getGyroZ();
 #endif
+	u32 after_update_mpu_time = log.status.delta_time ? micros() : 0;
+
+
+	//Clamp [-540, 540] => [-180, 180]
+	float ang_z = status.angle.z;
+	
+	if(ang_z > 180)
+	{
+		status.angle.z = ang_z - 360;
+	}
+	else if(ang_z < -180)
+	{
+		status.angle.z = ang_z + 360;
+	}
+
 
 	//**Battery**//
 	status.battery_level = analogRead(PIN_BATTERY);
@@ -399,7 +411,7 @@ void Model::UpdateStatus()
 		LOG(status.delta_time * 1000.0f);
 		LOG("ms");
 
-		LOGF(" MPU.dT= ");
+		LOGF("  MPU.dT= ");
 		LOG(after_update_mpu_time - before_update_mpu_time);
 		LOGF("us\n");
 	}
@@ -432,11 +444,11 @@ void Model::UpdateStatus()
 	}
 }
 
-//Ó¦ÓÃPID
+//åº”ç”¨PID
 void Model::UpdatePID()
 {
 	const float dtime = status.delta_time;
-	const u8 avFactor = 32;  //32/64/100 Ó°Ïì½ÇËÙ¶ÈPIDµÄÁ¿¼¶
+	const u8 avFactor = 32;  //32/64/100 å½±å“è§’é€Ÿåº¦PIDçš„é‡çº§
 
 	float cmd_values[3] =
 	{
@@ -500,140 +512,16 @@ void Model::UpdatePID()
 
 	if(log.pid.value) LOGF("\n");
 
-	/*
-	if(config.use_cascade.x)
-	{
-		//RX -> VX
-		float target_rx = ((s16)(command.angle_x) * config.action_angle) / 128.0f;
-		float rx = status.angle.x;
-		float vx = status.angular_velocity.x / avFactor;
-
-		float o_rx = pids.RX.Step(target_rx, rx, dtime);
-		float o_vx = pids.VX.Step(o_rx, vx, dtime);
-
-		//LOG
-		if(log.pid.x)
-		{
-			LOGF(" |PID.RX= ");
-			LOG(o_rx);
-			LOGF(" PID.VX= ");
-			LOG(o_vx);
-
-			LOGF(" RX.I=");
-			LOG(pids.RX.error_integration);
-			LOGF(" VX.I=");
-			LOGLN(pids.VX.error_integration);
-		}
-	}
-	else
-	{
-		//RX -> VX
-		float target_vx = ((s16)(command.angle_x) * config.action_angle) / (128.0f * avFactor);
-		float vx = status.angular_velocity.x / avFactor;
-		float o_vx = pids.VX.Step(target_vx, vx, dtime);
-
-		//LOG
-		if(log.pid.x)
-		{
-			LOGF(" |PID.VX= ");
-			LOG(o_vx);
-			LOGF(" I=");
-			LOG(pids.VX.error_integration);
-		}
-	}
-
-	if(config.use_cascade.y)
-	{
-		//RY -> VY
-		float target_ry = ((s16)(command.angle_y) * config.action_angle) / 128.0f;
-		float ry = status.angle.y;
-		float vy = status.angular_velocity.y / avFactor;
-
-		float o_ry = pids.RY.Step(target_ry, ry, dtime);
-		float o_vy = pids.VY.Step(o_ry, vy, dtime);
-
-		if(log.pid.y)
-		{
-			LOGF(" |PID.RY= ");
-			LOG(o_ry);
-			LOGF(" PID.VY= ");
-			LOG(o_vy);
-
-			LOGF(" RY.I=");
-			LOG(pids.RY.error_integration);
-			LOGF(" VY.I=");
-			LOGLN(pids.VY.error_integration);
-		}
-	}
-	else
-	{
-		//RY -> VY
-		float target_vy = ((s16)(command.angle_y) * config.action_angle) / (128.0f * avFactor);
-		float vy = status.angular_velocity.y / avFactor;
-		float o_vy = pids.VY.Step(target_vy, vy, dtime);
-
-
-		if(log.pid.y)
-		{
-			LOGF(" |PID.VY= ");
-			LOG(o_vy);
-			LOGF(" I=");
-			LOG(pids.VY.error_integration);
-		}
-	}
-
-
-	if(config.use_cascade.z)
-	{
-		//RZ -> VZ
-		float target_rz = ((s16)(command.angle_z) * config.action_angle_z) / 128.0f;
-		float rz = status.angle.z;
-		float vz = status.angular_velocity.z / avFactor;
-
-		float o_rz = pids.RZ.Step(target_rz, rz, dtime);
-		float o_vz = pids.VZ.Step(o_rz, vz, dtime);
-
-		if(log.pid.z)
-		{
-			LOGF(" |PID.RZ= ");
-			LOG(o_rz);
-			LOGF(" PID.VZ= ");
-			LOG(o_vz);
-
-			LOGF(" RZ.I=");
-			LOG(pids.RZ.error_integration);
-			LOGF(" VZ.I=");
-			LOGLN(pids.VZ.error_integration);
-		}
-	}
-	else
-	{
-		//RZ -> VZ
-		float target_vz = ((s16)(command.angle_z) * config.action_angle_z) / (128.0f * avFactor);
-		float vz = status.angular_velocity.z / avFactor;
-		float o_vz = pids.VZ.Step(target_vz, vz, dtime);
-
-		if(log.pid.z)
-		{
-			LOGF(" |PID.VZ= ");
-			LOG(o_vz);
-			LOGF(" I=");
-			LOG(pids.VZ.error_integration);
-		}
-	}
-	if(log.pid.value) LOGF("\n");
-	*/
-
 }
 
 
-//¸üĞÂPIDºÍ¿ØÖÆÊä³ö
+//æ›´æ–°PIDå’Œæ§åˆ¶è¾“å‡º
 void Model::UpdateControl()
 {
 	u16 th;
 	if(state == eState_FlightMode)
 	{
-		//Ê§È¥¿ØÖÆ¼ÆÊ±Æ÷³¬Ê±, ×ªÈë°²È«Ä£Ê½
+		//å¤±å»æ§åˆ¶è®¡æ—¶å™¨è¶…æ—¶, è½¬å…¥å®‰å…¨æ¨¡å¼
 		if(status.lost_control_timer > 1024)
 		{
 			status.lost_control_timer = 0;
@@ -641,13 +529,13 @@ void Model::UpdateControl()
 		}
 		else
 		{
-			th = command.throttle;  //**ÓÃ»§Ö±½Ó¿ØÖÆµç»úÓÍÃÅ
+			th = command.throttle;  //**ç”¨æˆ·ç›´æ¥æ§åˆ¶ç”µæœºæ²¹é—¨
 		}
 	}
 
 	if(state == eState_SafeMode)
 	{
-		//°²È«Ä£Ê½Öğ½¥¹Ø±Õµç»ú
+		//å®‰å…¨æ¨¡å¼é€æ¸å…³é—­ç”µæœº
 		if(control.throttle > 500) th = 500;
 		else
 		{
@@ -659,9 +547,11 @@ void Model::UpdateControl()
 	if(config.use_PID)
 	{
 		UpdatePID();
+		//(*) è¾“å‡ºæ§åˆ¶çš„æ–¹å‘è¿˜æ²¡æœ‰æµ‹è¯•, ä¸æ¸…æ¥šæ˜¯æ­£çš„è¿˜æ˜¯åçš„
+		//    å¦‚æœåäº†, æŠŠä¸‹é¢çš„è´Ÿå·å»æ‰
 		float o_x = -pids.VX.output;
 		float o_y = -pids.VY.output;
-		float o_z = -pids.VZ.output;   //**----
+		float o_z = -pids.VZ.output;
 		SetControl(th, o_x, o_y, o_z);
 	}
 	else
@@ -693,8 +583,8 @@ void Model::Update()
 
 	if(state == eState_LockMode) return;
 
-	//Ëø¶¨Ä£Ê½²»Æô¶¯µç»ú
-	//ÍË³öËø¶¨Ä£Ê½Ê±PID»áÖØÖÃ, ËùÒÔËø¶¨Ê±²»¸üĞÂPID
+	//é”å®šæ¨¡å¼ä¸å¯åŠ¨ç”µæœº
+	//é€€å‡ºé”å®šæ¨¡å¼æ—¶PIDä¼šé‡ç½®, æ‰€ä»¥é”å®šæ—¶ä¸æ›´æ–°PID
 	//SetMotor(0);
 
 	UpdateControl();

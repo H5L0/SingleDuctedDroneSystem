@@ -10,25 +10,39 @@
 #include "Wire.h"
 #include "Servo.h"
 
-//#define USE_HL_MPU6050
+//HL_MPU6050æ˜¯ç²¾ç®€é‡å†™çš„MPU6050åº“
+#define USE_HL_MPU6050
+
 #ifdef USE_HL_MPU6050
 #include "HL.MPU6050.h"
 #else
 #include "MPU6050_light.h"
 #endif
 
+//æ— äººæœºä½¿ç”¨çš„å³æ‰‹åæ ‡ç³»:
+//    Z   ^
+//  .-^-./ Y
+// /  |  \
+// \  *  /
+// |`---'|---> X
+// |     |
+// '-___-'
+// æ—‹è½¬äº¦éµå¾ªå³æ‰‹æ³•åˆ™:
+// æ‰‹æ¡è½´, å¤§æ‹‡æŒ‡æŒ‡å‘è½´æ­£æ–¹å‘, å››æŒ‡æ–¹å‘æ—‹å‘ä¸ºæ­£è½¬
 
 
+//æ§åˆ¶å‘½ä»¤ç»“æ„ä½“
 struct ControlCommand
 {
-	u16 throttle;  //ÓÍÃÅT [0, 1000] **±¾À´Ó¦¸Ã¿ØÖÆÊúÖ±ËÙ¶È
-	s8 angle_x;    //XÇãĞ±½Ç¶È angle = value/128 * action_angle(deg);
-	s8 angle_y;    //YÇãĞ±½Ç¶È
-	s16 angle_z;   //ZÆ«º½ËÙ¶È [-128, 127] => velocity(float) = value;
+	u16 throttle;  //æ²¹é—¨T [0, 1000] **æœ¬æ¥åº”è¯¥æ§åˆ¶ç«–ç›´é€Ÿåº¦
+	s8 angle_x;    //Xå€¾æ–œè§’åº¦ angle = value/128 * action_angle(deg);
+	s8 angle_y;    //Yå€¾æ–œè§’åº¦
+	s16 angle_z;   //Zåèˆªé€Ÿåº¦ [-128, 127] => velocity(float) = value;
+	               //æˆ– Zåèˆªè§’åº¦ [0, 32767] => [0*, 360*]
 };
 
 
-
+//æ— äººæœºæ§åˆ¶ç±»
 class Model
 {
 	public:
@@ -43,13 +57,13 @@ class Model
 		//eState_Unknown = 255,
 	}state;
 
-	// ÎŞÈË»úÅäÖÃ²ÎÊı(¿ÉÒÔ¶¯Ì¬±ä»¯µÄÁ¿)
+	// æ— äººæœºé…ç½®å‚æ•°(å¯ä»¥åŠ¨æ€å˜åŒ–çš„é‡)
 	struct ConfigStruct
 	{
-		u8 action_angle[3];   //×ËÌ¬ÇãĞ±½Ç·ù¶È(deg)
-		//u8 action_angle_z;    //zÖá¶¯×÷½Ç
+		u8 action_angle[3];   //å§¿æ€å€¾æ–œè§’å¹…åº¦(deg)
+		//u8 action_angle_z;    //zè½´åŠ¨ä½œè§’
 
-		bool use_PID;         //ÊÇ·ñÓ¦ÓÃPID¿ØÖÆ
+		bool use_PID;         //æ˜¯å¦åº”ç”¨PIDæ§åˆ¶
 		union
 		{
 			struct
@@ -59,7 +73,7 @@ class Model
 				bool z : 1;
 			};
 			u8 value;
-		}use_cascade;         //ÊÇ·ñÓ¦ÓÃ´®¼¶(ÄÚÍâ»·)
+		}use_cascade;         //æ˜¯å¦åº”ç”¨ä¸²çº§(å†…å¤–ç¯)
 		
 	}config;
 
@@ -76,7 +90,7 @@ class Model
 				bool delta_time : 1;
 			};
 			u8 value;
-		}status;          //ÊÇ·ñ´òÓ¡×´Ì¬ĞÅÏ¢
+		}status;          //æ˜¯å¦æ‰“å°çŠ¶æ€ä¿¡æ¯
 
 		union
 		{
@@ -87,60 +101,60 @@ class Model
 				bool z : 1;
 			};
 			u8 value;
-		}pid;             //ÊÇ·ñ´òÓ¡PIDÊä³ö
+		}pid;             //æ˜¯å¦æ‰“å°PIDè¾“å‡º
 
-		bool rudder;      //ÊÇ·ñ´òÓ¡¶æÎ»ÖÃ
-		//bool log_radio;       //ÊÇ·ñ´òÓ¡ÎŞÏßµçĞÅÏ¢
+		bool rudder;      //æ˜¯å¦æ‰“å°èˆµä½ç½®
+		//bool log_radio;       //æ˜¯å¦æ‰“å°æ— çº¿ç”µä¿¡æ¯
 	}log;  // 0b0000, 0b000, false, false
 
 
-	//ÎŞÈË»ú³õÊ¼ÊôĞÔ (¿ÉÒÔÉèÎªstaticµÄÁ¿)
+	//æ— äººæœºåˆå§‹å±æ€§ (å¯ä»¥è®¾ä¸ºstaticçš„é‡)
 	struct PropertyStruct
 	{
 		struct ThrottleProperty
 		{
-			u16 start;        //0ÓÍÃÅ¶ÔÓ¦µÄPWMĞÅºÅÊ±³¤(us)
-			u16 range;        //ÓÍÃÅĞÅºÅ·¶Î§(us)
+			u16 start;        //0æ²¹é—¨å¯¹åº”çš„PWMä¿¡å·æ—¶é•¿(us)
+			u16 range;        //æ²¹é—¨ä¿¡å·èŒƒå›´(us)
 		}throttle;
 
 		struct RudderProperty
 		{
-			u16 middle[4];    //PWMĞÅºÅÖĞ¼äÖµ(us) Õë¶Ô¶æ»úĞÍºÅºÍ°²×°Çé¿öÉèÖÃ
-			u8 angle_range;   //¶æÆ¬µ¥²à×ª½Ç(deg) PWMĞÅºÅ±ä»¯·¶Î§ = Control.angle[-1,1f] * value * (1000/180) (us)
+			u16 middle[4];    //PWMä¿¡å·ä¸­é—´å€¼(us) é’ˆå¯¹èˆµæœºå‹å·å’Œå®‰è£…æƒ…å†µè®¾ç½®
+			u8 angle_range;   //èˆµç‰‡å•ä¾§è½¬è§’(deg) PWMä¿¡å·å˜åŒ–èŒƒå›´ = Control.angle[-1,1f] * value * (1000/180) (us)
 		}rudder;
 
 	}property;
 
 
-	//ÎŞÈË»ú×´Ì¬
+	//æ— äººæœºçŠ¶æ€
 	struct
 	{
-		Vector3F acceleration;      //¼ÓËÙ¶È
-		Vector3F angle;             //×ËÌ¬½Ç¶È
-		Vector3F angular_velocity;  //½ÇËÙ¶È
+		Vector3F acceleration;      //åŠ é€Ÿåº¦
+		Vector3F angle;             //å§¿æ€è§’åº¦
+		Vector3F angular_velocity;  //è§’é€Ÿåº¦
 
-		u8 battery_level;           //µç³ØµçÎ» [0V, 5V] => [0,255] (ADCµÄÔ­Ê¼×ª»»½á¹û)
+		u8 battery_level;           //ç”µæ± ç”µä½ [0V, 5V] => [0,255] (ADCçš„åŸå§‹è½¬æ¢ç»“æœ)
 
 
-		u8 delta_time_1024;         //×î½üÒ»´Î¸üĞÂµÄ¼ä¸ô(1/1024s)
+		u8 delta_time_1024;         //æœ€è¿‘ä¸€æ¬¡æ›´æ–°çš„é—´éš”(1/1024s)
 
-		float delta_time;           //¸üĞÂ¼ä¸ô(s)
+		float delta_time;           //æ›´æ–°é—´éš”(s)
 
-		u32 last_update_time;       //ÉÏÒ»¸üĞÂµÄÊ±¼ä(us)
+		u32 last_update_time;       //ä¸Šä¸€æ›´æ–°çš„æ—¶é—´(us)
 
-		u16 lost_control_timer;     //Ê§È¥¿ØÖÆµÄÊ±¼ä(ms)
+		u16 lost_control_timer;     //å¤±å»æ§åˆ¶çš„æ—¶é—´(ms)
 	}status;
 
 
-	//ÏµÍ³¿ØÖÆµÄÄÚÈİ
+	//ç³»ç»Ÿæ§åˆ¶çš„è¾“å‡ºå’Œå¯¹åº”çš„è®¾å¤‡
 	struct
 	{
 		//[0, 1000] => 1000 + value =>>= [0%, 100%]
 		u16 throttle;
 		float rudders[4];
 
-		Servo motor;
-		Servo servo[4];
+		Servo motor;      //ç”µæœº
+		Servo servo[4];   //å››ä¸ªèˆµæœº, åˆ†åˆ«æ˜¯å‰(+Y), å³(+X), å(-Y), å·¦(-X)
 	}control = { 0, { 0, 0, 0, 0 } };
 
 
@@ -149,14 +163,14 @@ class Model
 
 	//------------------------------- Control: PID --------------------------------//
 
-	//ËùÓĞPID¿ØÖÆÆ÷µÄ¼¯ºÏÌå
+	//æ‰€æœ‰PIDæ§åˆ¶å™¨çš„é›†åˆä½“
 	struct
 	{
-		PIDController VH;  //ÊúÖ±ËÙ¶È
-		PIDController AH;  //ÊúÖ±¼ÓËÙ¶È
+		PIDController VH;  //ç«–ç›´é€Ÿåº¦
+		PIDController AH;  //ç«–ç›´åŠ é€Ÿåº¦
 
-		PIDController RX;  //XÖá×ËÌ¬½Ç¶È
-		PIDController VX;  //XÖá½ÇËÙ¶È
+		PIDController RX;  //Xè½´å§¿æ€è§’åº¦
+		PIDController VX;  //Xè½´è§’é€Ÿåº¦
 
 		PIDController RY;
 		PIDController VY;
@@ -202,7 +216,7 @@ class Model
 	inline PIDController &GetPID(u8 index) { return ((PIDController *)&pids)[index]; }
 	inline PIDController *GetPIDs() { return (PIDController *)&pids; }
 
-	//Éè¶¨Ä³¸öPIDµÄÄ³¸ö²ÎÊı
+	//è®¾å®šæŸä¸ªPIDçš„æŸä¸ªå‚æ•°
 	void SetPIDParameter(u8 index, u8 id, fp32 value_fp32);
 	void SetPIDParameter(u8 index, s16 kp, s16 ki, s16 kd);
 	void ConfigPID(u8 index, byte u8);
@@ -217,13 +231,13 @@ class Model
 
 	//----------------------------- Routine Function ------------------------------//
 
-	//´Ó¸÷Éè±¸ÉÏ»ñÈ¡µ±Ç°ÎŞÈË»ú×´Ì¬
+	//ä»å„è®¾å¤‡ä¸Šè·å–å½“å‰æ— äººæœºçŠ¶æ€
 	void UpdateStatus();
 
-	//Ó¦ÓÃPID
+	//åº”ç”¨PID
 	void UpdatePID();
 
-	//¸üĞÂPIDºÍ¿ØÖÆÊä³ö
+	//æ›´æ–°PIDå’Œæ§åˆ¶è¾“å‡º
 	void UpdateControl();
 
 

@@ -1,3 +1,6 @@
+//
+//单涵道无人机控制系统 -- Arduino主程序
+//
 #include "Model.h"
 #include "Synchronizer.h"
 #include "Storage.h"
@@ -34,7 +37,7 @@ void setup()
 
 void loop()
 {
-	synch.Sync(model);  // (*)接收命令 => 发送之前请求的数据 => 处理接收的命令 => 发送当前命令执行结果/发送当前请求的数据
+	synch.Sync(model);     // 接收并处理命令
 
 	model.Update();
 
