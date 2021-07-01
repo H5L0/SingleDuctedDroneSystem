@@ -1,7 +1,6 @@
 # SingleDuctedDroneSystem
 SingleDuctedDroneSystem是一个用于控制单涵道无人机的飞控，基于Arduino的进行开发，运行在Arduino pro mini 上，主要包含无线通信、PID控制和参数储存功能。
 
-
 ## 如何编译
 * 使用`git clone https://github.com/H5L0/SingleDuctedDroneSystem.git`命令将库克隆到本地。
 * 下载安装[Arduino IDE](https://www.arduino.cc/en/software)。
@@ -22,7 +21,7 @@ SingleDuctedDroneSystem是一个用于控制单涵道无人机的飞控，基于
 - ["Beeper.h"](/blob/Float/Beeper.h) - 蜂鸣器，用于控制蜂鸣器
 
 #### Synchronizer 同步器
-同步器控制RF24L01+无线通信模块，它通过“Half Link”通信协议定义的数据格式和通信流程与地面站通信，的流程如下：
+同步器控制RF24L01+无线通信模块，它通过“Half Link”通信协议定义的数据格式和通信流程与地面站通信，流程如下：
 ```
  地面站 无人机
     |    |
