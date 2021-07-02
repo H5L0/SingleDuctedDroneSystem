@@ -1,5 +1,5 @@
 # SingleDuctedDroneSystem
-SingleDuctedDroneSystem是一个用于控制单涵道无人机的飞控，基于Arduino的进行开发，运行在Arduino pro mini 上，主要包含无线通信、PID控制和参数储存功能。
+SingleDuctedDroneSystem是一个用于控制单涵道无人机的飞控，基于Arduino开发，运行在Arduino pro mini 上，主要包含无线通信、PID控制和参数储存功能。
 
 ## 如何编译
 * 使用`git clone https://github.com/H5L0/SingleDuctedDroneSystem.git`命令将库克隆到本地。
